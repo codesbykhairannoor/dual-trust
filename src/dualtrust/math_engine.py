@@ -128,7 +128,7 @@ class ReputationMath:
         reporter_credibility: float = 1.0,
         current_time: Optional[float] = None,
     ) -> Tuple[float, float, bool]:
-        """Apply asymmetric exponential slashing with reporter credibility discounting."""
+        """Apply asymmetric power-law slashing (v^1.8) with reporter credibility discounting."""
         self.apply_time_decay(profile, current_time=current_time)
 
         severity = max(1.0, min(5.0, severity))
@@ -136,15 +136,20 @@ class ReputationMath:
 
         # Sybil Defamation Defense: Quarantined or untrusted reporters (< 0.20) cannot
         # unilaterally slash a verified entity without independent corroboration
-        if credibility < self.quarantine_threshold and profile.status == AgentStatus.VERIFIED:
+        is_untrusted_reporter = credibility < self.quarantine_threshold
+        if is_untrusted_reporter and profile.status == AgentStatus.VERIFIED:
             return profile.trust_score, 0.0, False
 
-        # Minor Glitch Tolerance: Transient hiccups (severity <= 1.5) use linear scaling
-        # and do not wipe the clean streak entirely, preventing false quarantine on noisy networks
+        # Sybil Escalation Resistance: Accusations from untrusted reporters (< 0.20)
+        # or minor transient glitches (severity <= 1.5) must NOT increment the escalation counter (violations_count)
+        # and must use linear scaling (exponent = 1.0) to prevent power-law amplification
         is_minor_glitch = severity <= 1.5
-        if is_minor_glitch:
+        if is_untrusted_reporter or is_minor_glitch:
             effective_exponent = 1.0
-            profile.consecutive_clean_actions = max(0, profile.consecutive_clean_actions - 5)
+            if is_minor_glitch:
+                profile.consecutive_clean_actions = max(0, profile.consecutive_clean_actions - 5)
+            else:
+                profile.consecutive_clean_actions = 0
         else:
             profile.violations_count += 1
             profile.consecutive_clean_actions = 0
@@ -160,9 +165,11 @@ class ReputationMath:
             * math.pow(max(1, profile.violations_count), effective_exponent)
         )
 
-        # Critical protocol trespass carries a hard multiplier
+        # Critical protocol trespass carries a hard multiplier, but ONLY when reported by a credible entity
         is_critical_trespass = (
-            violation_type == ViolationType.PROTOCOL_TRESPASS and severity >= 3.0
+            violation_type == ViolationType.PROTOCOL_TRESPASS
+            and severity >= 3.0
+            and not is_untrusted_reporter
         )
         if is_critical_trespass:
             penalty_delta *= 2.0
@@ -170,7 +177,7 @@ class ReputationMath:
         profile.beta += penalty_delta
         profile.trust_score = self.expected_trust(profile.alpha, profile.beta)
 
-        # Determine quarantine condition
+        # Determine quarantine condition: Untrusted reporters can NEVER force-quarantine any entity
         force_quarantine = is_critical_trespass or (profile.trust_score < self.quarantine_threshold)
         profile.status = self.determine_status(profile.trust_score, is_quarantined=force_quarantine)
         profile.last_updated = current_time if current_time is not None else time.time()

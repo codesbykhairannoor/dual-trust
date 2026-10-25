@@ -1,7 +1,12 @@
 """Unit tests for the cryptographic hash-chained audit ledger."""
 
+import hashlib
+import os
+import tempfile
 import unittest
-from dualtrust.crypto_ledger import CryptographicLedger
+from dualtrust.crypto_ledger import CryptographicLedger, MerkleTree
+from dualtrust.engine import DualTrust
+from dualtrust.storage import SQLiteStorage
 
 
 class TestCryptographicLedger(unittest.TestCase):
@@ -75,6 +80,71 @@ class TestCryptographicLedger(unittest.TestCase):
         self.assertFalse(is_valid)
         self.assertIn("chain break", str(err).lower())
 
+    def test_rfc6962_domain_separation_invariants(self) -> None:
+        """Verify RFC 6962 domain separation prefixes: 0x00 for leaves, 0x01 for internal nodes."""
+        data = b"sample_event_payload"
+        expected_leaf = hashlib.sha256(b"\x00" + data).hexdigest()
+        actual_leaf = MerkleTree.hash_leaf(data)
+        self.assertEqual(actual_leaf, expected_leaf)
+
+        left = "a" * 64
+        right = "b" * 64
+        expected_node = hashlib.sha256(b"\x01" + bytes.fromhex(left) + bytes.fromhex(right)).hexdigest()
+        actual_node = MerkleTree._hash_pair(left, right)
+        self.assertEqual(actual_node, expected_node)
+
+        # Second preimage resistance: leaf hash of (left || right) must never equal node hash of (left, right)
+        leaf_of_concat = hashlib.sha256(b"\x00" + bytes.fromhex(left) + bytes.fromhex(right)).hexdigest()
+        self.assertNotEqual(leaf_of_concat, actual_node)
+
+    def test_sqlite_ledger_persistence_and_chain_hydration(self) -> None:
+        """Verify that audit blocks persist to SQLite and hydrate on startup with chain integrity."""
+        temp_dir = tempfile.mkdtemp()
+        db_path = os.path.join(temp_dir, "ledger_test.db")
+
+        try:
+            storage1 = SQLiteStorage(db_path=db_path)
+            dt1 = DualTrust(storage=storage1, secret_key="ledger-key")
+            dt1.register_human("user_alice", social_credit=700, credits_balance=50)
+            dt1.register_agent("agent_bob", initial_trust=0.80)
+            dt1.reward_agent("agent_bob", weight=1.0)
+
+            blocks_count1 = dt1.ledger.length
+            self.assertEqual(blocks_count1, 3)
+            root1 = dt1.get_merkle_root()
+
+            valid1, err1 = dt1.verify_ledger_integrity()
+            self.assertTrue(valid1)
+            self.assertIsNone(err1)
+            storage1.close()
+
+            # Second instance: Re-open with new connection
+            storage2 = SQLiteStorage(db_path=db_path)
+            dt2 = DualTrust(storage=storage2, secret_key="ledger-key")
+
+            # Verify chain hydration
+            self.assertEqual(dt2.ledger.length, 3)
+            self.assertEqual(dt2.get_merkle_root(), root1)
+            valid2, err2 = dt2.verify_ledger_integrity()
+            self.assertTrue(valid2)
+            self.assertIsNone(err2)
+
+            # Append block 4 in second session
+            dt2.add_credits("user_alice", 25)
+            self.assertEqual(dt2.ledger.length, 4)
+            valid3, _ = dt2.verify_ledger_integrity()
+            self.assertTrue(valid3)
+
+            # Check that block 3 linked directly to block 2
+            self.assertEqual(dt2.ledger._chain[3].prev_hash, dt2.ledger._chain[2].block_hash)
+            storage2.close()
+        finally:
+            if os.path.exists(db_path):
+                os.remove(db_path)
+            if os.path.exists(temp_dir):
+                os.rmdir(temp_dir)
+
 
 if __name__ == "__main__":
     unittest.main()
+

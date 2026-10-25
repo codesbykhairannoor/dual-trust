@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 import hashlib
 import json
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 
 @dataclass(frozen=True)
@@ -68,9 +68,26 @@ class MerkleTree:
         self._build_tree()
 
     @staticmethod
+    def hash_leaf(data: Union[str, bytes]) -> str:
+        """Compute RFC 6962 leaf hash with 0x00 domain separation prefix: SHA-256(0x00 || data)."""
+        payload = data if isinstance(data, bytes) else data.encode("utf-8")
+        return hashlib.sha256(b"\x00" + payload).hexdigest()
+
+    @staticmethod
     def _hash_pair(left: str, right: str) -> str:
-        """Hash a concatenation of left and right child nodes."""
-        return hashlib.sha256((left + right).encode("utf-8")).hexdigest()
+        """Hash child nodes using RFC 6962 0x01 internal node domain separation prefix: SHA-256(0x01 || left || right)."""
+        try:
+            left_bytes = bytes.fromhex(left) if len(left) == 64 else left.encode("utf-8")
+            right_bytes = bytes.fromhex(right) if len(right) == 64 else right.encode("utf-8")
+        except ValueError:
+            left_bytes = left.encode("utf-8")
+            right_bytes = right.encode("utf-8")
+        return hashlib.sha256(b"\x01" + left_bytes + right_bytes).hexdigest()
+
+    @classmethod
+    def hash_children(cls, left: str, right: str) -> str:
+        """Public alias for hashing two nodes under RFC 6962 domain separation."""
+        return cls._hash_pair(left, right)
 
     def _build_tree(self) -> None:
         """Construct hierarchical layers from leaves to root."""
@@ -141,8 +158,13 @@ class CryptographicLedger:
 
     GENESIS_HASH = "0" * 64
 
-    def __init__(self) -> None:
+    def __init__(self, storage: Optional[Any] = None) -> None:
         self._chain: List[AuditBlock] = []
+        self._storage = storage
+        if self._storage is not None and hasattr(self._storage, "get_ledger_blocks"):
+            persisted = self._storage.get_ledger_blocks()
+            if persisted:
+                self._chain = list(persisted)
 
     def append(
         self,
@@ -151,7 +173,7 @@ class CryptographicLedger:
         payload: Dict[str, Any],
         timestamp: Optional[float] = None,
     ) -> AuditBlock:
-        """Append a new verified block to the hash chain."""
+        """Append a new verified block to the hash chain and persist to storage if configured."""
         index = len(self._chain)
         prev_hash = self._chain[-1].block_hash if self._chain else self.GENESIS_HASH
         block = AuditBlock.create(
@@ -163,6 +185,8 @@ class CryptographicLedger:
             timestamp=timestamp,
         )
         self._chain.append(block)
+        if self._storage is not None and hasattr(self._storage, "save_ledger_block"):
+            self._storage.save_ledger_block(block)
         return block
 
     @property

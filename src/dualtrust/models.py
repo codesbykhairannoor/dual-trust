@@ -143,6 +143,8 @@ class ChallengeStatus(str, Enum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     EXPIRED = "EXPIRED"
+    CONSUMED = "CONSUMED"
+
 
 
 @dataclass(frozen=True)
@@ -287,9 +289,9 @@ class MandateStatus(str, Enum):
     REVOKED = "revoked"
 
 
-@dataclass
+@dataclass(frozen=True)
 class DelegationMandate:
-    """Cryptographically signed delegation ticket governing Agent-to-Agent sub-task execution."""
+    """Cryptographically signed, immutable delegation ticket governing Agent-to-Agent sub-task execution."""
 
     mandate_id: str
     parent_agent_id: str
@@ -298,6 +300,8 @@ class DelegationMandate:
     allowed_actions: List[str]
     max_credits: int
     credits_used: int = 0
+    reserved_child_credits: int = 0
+    parent_mandate_id: Optional[str] = None
     max_depth: int = 1
     current_depth: int = 1
     created_at: float = field(default_factory=time.time)
@@ -316,6 +320,11 @@ class DelegationMandate:
         """Return remaining unspent credits allotted under this mandate."""
         return max(0, self.max_credits - self.credits_used)
 
+    @property
+    def available_for_delegation(self) -> int:
+        """Return unallocated budget available to reserve for derived child sub-mandates (anti-fan-out)."""
+        return max(0, self.max_credits - self.credits_used - self.reserved_child_credits)
+
     def can_perform(self, action: str) -> bool:
         """Verify whether an action falls within the mandate's authorized scope."""
         if "*" in self.allowed_actions:
@@ -325,11 +334,13 @@ class DelegationMandate:
     def describe(self) -> str:
         """Format a human-readable summary of the mandate."""
         actions_str = ", ".join(self.allowed_actions)
+        parent_info = f" (Child of {self.parent_mandate_id[:8]})" if self.parent_mandate_id else ""
         return (
-            f"[Mandate {self.mandate_id[:8]}] Parent: '{self.parent_agent_id}' -> Sub: '{self.sub_agent_id}' "
+            f"[Mandate {self.mandate_id[:8]}{parent_info}] Parent: '{self.parent_agent_id}' -> Sub: '{self.sub_agent_id}' "
             f"for User: '{self.user_id}' | Actions: [{actions_str}] | Credits: {self.credits_used}/{self.max_credits} "
-            f"| Depth: {self.current_depth}/{self.max_depth} | Status: {self.status.value}"
+            f"(Reserved Children: {self.reserved_child_credits}) | Depth: {self.current_depth}/{self.max_depth} | Status: {self.status.value}"
         )
+
 
 
 @dataclass(frozen=True)

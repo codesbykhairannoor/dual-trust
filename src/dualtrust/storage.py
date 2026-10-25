@@ -12,13 +12,16 @@ from dualtrust.models import (
     AgentProfile,
     AgentStatus,
     ChallengeStatus,
+    DelegationMandate,
     EpisodicReflection,
     HumanApprovalChallenge,
     HumanProfile,
     HumanTier,
+    MandateStatus,
     ViolationEvent,
     ViolationType,
 )
+from dualtrust.crypto_ledger import AuditBlock
 
 
 class StorageBackend(ABC):
@@ -94,6 +97,26 @@ class StorageBackend(ABC):
     ) -> bool:
         """Update the status of a challenge atomically (single-use enforcement)."""
 
+    @abstractmethod
+    def save_ledger_block(self, block: AuditBlock) -> None:
+        """Persist a cryptographically chained audit block."""
+
+    @abstractmethod
+    def get_ledger_blocks(self) -> List[AuditBlock]:
+        """Retrieve all audit blocks in chronological order from genesis."""
+
+    @abstractmethod
+    def save_mandate(self, mandate: DelegationMandate) -> None:
+        """Persist or update an agent-to-agent delegation mandate."""
+
+    @abstractmethod
+    def get_mandate(self, mandate_id: str) -> Optional[DelegationMandate]:
+        """Retrieve a delegation mandate by unique identifier."""
+
+    @abstractmethod
+    def get_all_mandates(self) -> List[DelegationMandate]:
+        """Retrieve all delegation mandates."""
+
 
 class MemoryStorage(StorageBackend):
     """Thread-safe in-memory storage backend."""
@@ -105,6 +128,8 @@ class MemoryStorage(StorageBackend):
         self._violations: List[ViolationEvent] = []
         self._reflections: Dict[str, List[EpisodicReflection]] = {}
         self._challenges: Dict[str, HumanApprovalChallenge] = {}
+        self._ledger_blocks: List[AuditBlock] = []
+        self._mandates: Dict[str, DelegationMandate] = {}
 
     def save_agent(self, profile: AgentProfile) -> None:
         with self._lock:
@@ -190,7 +215,14 @@ class MemoryStorage(StorageBackend):
             ch = self._challenges.get(challenge_id)
             if not ch:
                 return False
-            if ch.status != ChallengeStatus.PENDING:
+            # Enforce valid state transitions
+            if ch.status == ChallengeStatus.PENDING:
+                if status not in (ChallengeStatus.APPROVED, ChallengeStatus.REJECTED, ChallengeStatus.EXPIRED):
+                    return False
+            elif ch.status == ChallengeStatus.APPROVED:
+                if status not in (ChallengeStatus.CONSUMED, ChallengeStatus.EXPIRED):
+                    return False
+            else:
                 return False
             updated = HumanApprovalChallenge(
                 challenge_id=ch.challenge_id,
@@ -208,6 +240,26 @@ class MemoryStorage(StorageBackend):
             )
             self._challenges[challenge_id] = updated
             return True
+
+    def save_ledger_block(self, block: AuditBlock) -> None:
+        with self._lock:
+            self._ledger_blocks.append(block)
+
+    def get_ledger_blocks(self) -> List[AuditBlock]:
+        with self._lock:
+            return list(self._ledger_blocks)
+
+    def save_mandate(self, mandate: DelegationMandate) -> None:
+        with self._lock:
+            self._mandates[mandate.mandate_id] = mandate
+
+    def get_mandate(self, mandate_id: str) -> Optional[DelegationMandate]:
+        with self._lock:
+            return self._mandates.get(mandate_id)
+
+    def get_all_mandates(self) -> List[DelegationMandate]:
+        with self._lock:
+            return list(self._mandates.values())
 
 
 class SQLiteStorage(StorageBackend):
@@ -326,6 +378,41 @@ class SQLiteStorage(StorageBackend):
                     status TEXT,
                     resolved_at REAL,
                     resolution_reason TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS ledger_blocks (
+                    block_index INTEGER PRIMARY KEY,
+                    timestamp REAL,
+                    event_type TEXT,
+                    entity_id TEXT,
+                    payload_json TEXT,
+                    prev_hash TEXT,
+                    block_hash TEXT
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS delegation_mandates (
+                    mandate_id TEXT PRIMARY KEY,
+                    parent_agent_id TEXT,
+                    sub_agent_id TEXT,
+                    user_id TEXT,
+                    parent_mandate_id TEXT,
+                    current_depth INTEGER,
+                    max_depth INTEGER,
+                    max_credits INTEGER,
+                    credits_used INTEGER,
+                    reserved_child_credits INTEGER,
+                    allowed_actions_json TEXT,
+                    expires_at REAL,
+                    created_at REAL,
+                    status TEXT,
+                    metadata_json TEXT,
+                    signature TEXT
                 )
                 """
             )
@@ -595,15 +682,144 @@ class SQLiteStorage(StorageBackend):
         resolved_at: float,
         reason: str = "",
     ) -> bool:
-        """Atomic status update: only updates if current status is PENDING (single-use enforcement)."""
+        """Atomic status update: enforces valid state transitions (single-use anti-replay enforcement)."""
         with self._lock, self._connection() as conn:
+            if status in (ChallengeStatus.APPROVED, ChallengeStatus.REJECTED):
+                prev_statuses = (ChallengeStatus.PENDING.value,)
+            elif status == ChallengeStatus.CONSUMED:
+                prev_statuses = (ChallengeStatus.APPROVED.value,)
+            elif status == ChallengeStatus.EXPIRED:
+                prev_statuses = (ChallengeStatus.PENDING.value, ChallengeStatus.APPROVED.value)
+            else:
+                return False
+
+            placeholders = ",".join("?" for _ in prev_statuses)
             cursor = conn.execute(
-                """
+                f"""
                 UPDATE challenges
                 SET status = ?, resolved_at = ?, resolution_reason = ?
-                WHERE challenge_id = ? AND status = ?
+                WHERE challenge_id = ? AND status IN ({placeholders})
                 """,
-                (status.value, resolved_at, reason, challenge_id, ChallengeStatus.PENDING.value),
+                (status.value, resolved_at, reason, challenge_id, *prev_statuses),
             )
             conn.commit()
             return cursor.rowcount > 0
+
+    def save_ledger_block(self, block: AuditBlock) -> None:
+        with self._lock, self._connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO ledger_blocks
+                (block_index, timestamp, event_type, entity_id, payload_json, prev_hash, block_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    block.index,
+                    block.timestamp,
+                    block.event_type,
+                    block.entity_id,
+                    json.dumps(block.payload, sort_keys=True),
+                    block.prev_hash,
+                    block.block_hash,
+                ),
+            )
+            conn.commit()
+
+    def get_ledger_blocks(self) -> List[AuditBlock]:
+        with self._lock, self._connection() as conn:
+            cursor = conn.execute("SELECT * FROM ledger_blocks ORDER BY block_index ASC")
+            rows = cursor.fetchall()
+            return [
+                AuditBlock(
+                    index=row["block_index"],
+                    timestamp=row["timestamp"],
+                    event_type=row["event_type"],
+                    entity_id=row["entity_id"],
+                    payload=json.loads(row["payload_json"]),
+                    prev_hash=row["prev_hash"],
+                    block_hash=row["block_hash"],
+                )
+                for row in rows
+            ]
+
+    def save_mandate(self, mandate: DelegationMandate) -> None:
+        with self._lock, self._connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO delegation_mandates
+                (mandate_id, parent_agent_id, sub_agent_id, user_id, parent_mandate_id, current_depth, max_depth, max_credits,
+                 credits_used, reserved_child_credits, allowed_actions_json, expires_at, created_at, status, metadata_json, signature)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    mandate.mandate_id,
+                    mandate.parent_agent_id,
+                    mandate.sub_agent_id,
+                    mandate.user_id,
+                    mandate.parent_mandate_id,
+                    mandate.current_depth,
+                    mandate.max_depth,
+                    mandate.max_credits,
+                    mandate.credits_used,
+                    mandate.reserved_child_credits,
+                    json.dumps(list(mandate.allowed_actions)),
+                    mandate.expires_at,
+                    mandate.created_at,
+                    mandate.status.value,
+                    json.dumps(mandate.metadata),
+                    mandate.signature,
+                ),
+            )
+            conn.commit()
+
+    def get_mandate(self, mandate_id: str) -> Optional[DelegationMandate]:
+        with self._lock, self._connection() as conn:
+            cursor = conn.execute("SELECT * FROM delegation_mandates WHERE mandate_id = ?", (mandate_id,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return DelegationMandate(
+                mandate_id=row["mandate_id"],
+                parent_agent_id=row["parent_agent_id"],
+                sub_agent_id=row["sub_agent_id"],
+                user_id=row["user_id"],
+                parent_mandate_id=row["parent_mandate_id"],
+                current_depth=row["current_depth"],
+                max_depth=row["max_depth"],
+                max_credits=row["max_credits"],
+                credits_used=row["credits_used"],
+                reserved_child_credits=row["reserved_child_credits"],
+                allowed_actions=json.loads(row["allowed_actions_json"]),
+                expires_at=row["expires_at"],
+                created_at=row["created_at"],
+                status=MandateStatus(row["status"]),
+                metadata=json.loads(row["metadata_json"] or "{}"),
+                signature=row["signature"],
+            )
+
+    def get_all_mandates(self) -> List[DelegationMandate]:
+        with self._lock, self._connection() as conn:
+            cursor = conn.execute("SELECT * FROM delegation_mandates")
+            rows = cursor.fetchall()
+            return [
+                DelegationMandate(
+                    mandate_id=row["mandate_id"],
+                    parent_agent_id=row["parent_agent_id"],
+                    sub_agent_id=row["sub_agent_id"],
+                    user_id=row["user_id"],
+                    parent_mandate_id=row["parent_mandate_id"],
+                    current_depth=row["current_depth"],
+                    max_depth=row["max_depth"],
+                    max_credits=row["max_credits"],
+                    credits_used=row["credits_used"],
+                    reserved_child_credits=row["reserved_child_credits"],
+                    allowed_actions=json.loads(row["allowed_actions_json"]),
+                    expires_at=row["expires_at"],
+                    created_at=row["created_at"],
+                    status=MandateStatus(row["status"]),
+                    metadata=json.loads(row["metadata_json"] or "{}"),
+                    signature=row["signature"],
+                )
+                for row in rows
+            ]
+

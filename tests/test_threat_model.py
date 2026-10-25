@@ -152,6 +152,83 @@ class TestThreatModelDefenses(unittest.TestCase):
         self.assertFalse(valid_forged)
         self.assertIn("mismatch", str(err_forged).lower())
 
+    def test_fix4_anonymous_and_unregistered_reporter_discounting(self) -> None:
+        """Verify FIX 4: Anonymous (None) and unregistered reporters are severely discounted and cannot quarantine."""
+        self.dt.register_agent("verified_target", initial_trust=0.90)
+        self.dt.register_agent("probation_target", initial_trust=0.50)
+
+        # 1. Anonymous report against VERIFIED target is completely discarded (c = 0.10 < 0.20)
+        event_anon_v = self.dt.report_violation(
+            agent_id="verified_target",
+            violation_type=ViolationType.PROTOCOL_TRESPASS,
+            severity=5.0,
+            reporter_id=None,
+        )
+        self.assertEqual(event_anon_v.penalty_applied, 0.0)
+        self.assertEqual(self.dt.get_agent("verified_target").status, AgentStatus.VERIFIED)
+
+        # 2. Fabricated / unregistered reporter ID against VERIFIED target is discarded (c = 0.05 < 0.20)
+        event_fake_v = self.dt.report_violation(
+            agent_id="verified_target",
+            violation_type=ViolationType.PROTOCOL_TRESPASS,
+            severity=5.0,
+            reporter_id="completely_fabricated_sybil_bot_99",
+        )
+        self.assertEqual(event_fake_v.penalty_applied, 0.0)
+        self.assertEqual(self.dt.get_agent("verified_target").status, AgentStatus.VERIFIED)
+
+        # 3. Unregistered reporter attempting critical trespass against PROBATION target:
+        # Must NOT force-quarantine and must NOT increment violations_count!
+        event_fake_p = self.dt.report_violation(
+            agent_id="probation_target",
+            violation_type=ViolationType.PROTOCOL_TRESPASS,
+            severity=5.0,
+            reporter_id="unregistered_adversary_bot",
+        )
+        probation_agent = self.dt.get_agent("probation_target")
+        self.assertNotEqual(probation_agent.status, AgentStatus.QUARANTINED)
+        self.assertEqual(probation_agent.status, AgentStatus.PROBATION)
+        self.assertEqual(probation_agent.violations_count, 0)
+        self.assertLess(event_fake_p.penalty_applied, 0.20)
+
+    def test_fix4_sybil_swarm_spam_power_law_resistance(self) -> None:
+        """Verify FIX 4: Swarm of unregistered Sybils cannot trigger power-law amplification or quarantine probation agents."""
+        self.dt.register_agent("probation_worker", initial_trust=0.50)
+
+        # Attacker fires 25 separate false reports using 25 fake reporter IDs
+        for i in range(25):
+            self.dt.report_violation(
+                agent_id="probation_worker",
+                violation_type=ViolationType.PROTOCOL_TRESPASS,
+                severity=4.5,
+                reporter_id=f"sybil_swarm_attacker_{i}",
+            )
+
+        worker = self.dt.get_agent("probation_worker")
+        # Invariant 1: Escalation counter remains 0 (untrusted reports do not pump v)
+        self.assertEqual(worker.violations_count, 0)
+        # Invariant 2: Agent is NOT quarantined
+        self.assertNotEqual(worker.status, AgentStatus.QUARANTINED)
+        # Invariant 3: Cumulative trust score degradation is capped, staying above restricted threshold
+        self.assertGreater(worker.trust_score, 0.35)
+
+    def test_fix4_credible_reporter_critical_slashing(self) -> None:
+        """Verify FIX 4: Legitimate verified entities retain full authoritative capability to slash rogue agents."""
+        self.dt.register_agent("supervisor_agent", initial_trust=0.92)
+        self.dt.register_agent("rogue_agent", initial_trust=0.50)
+
+        # Verified supervisor catches rogue agent in protocol trespass
+        event = self.dt.report_violation(
+            agent_id="rogue_agent",
+            violation_type=ViolationType.PROTOCOL_TRESPASS,
+            severity=4.0,
+            reporter_id="supervisor_agent",
+        )
+        rogue = self.dt.get_agent("rogue_agent")
+        # Credible report must trigger immediate quarantine
+        self.assertEqual(rogue.status, AgentStatus.QUARANTINED)
+        self.assertGreater(event.penalty_applied, 5.0)
+
 
 if __name__ == "__main__":
     unittest.main()

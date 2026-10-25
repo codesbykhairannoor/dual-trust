@@ -88,11 +88,18 @@ class DualTrust:
         """
         self.storage = storage or MemoryStorage()
         self.math = math_engine or ReputationMath()
-        self.ledger = ledger or CryptographicLedger()
+        if ledger is None:
+            self.ledger = CryptographicLedger(storage=self.storage)
+        else:
+            self.ledger = ledger
+            if getattr(self.ledger, "_storage", None) is None:
+                self.ledger._storage = self.storage
+                if hasattr(self.storage, "get_ledger_blocks") and not self.ledger._chain:
+                    self.ledger._chain = list(self.storage.get_ledger_blocks())
         self.secret_key = secret_key or uuid.uuid4().hex
         self.verdict_ttl_seconds = verdict_ttl_seconds
         self.watchdog = watchdog
-        self.mandate_manager = MandateManager(secret_key=self.secret_key)
+        self.mandate_manager = MandateManager(secret_key=self.secret_key, storage=self.storage)
 
         weight_sum = human_weight + agent_weight
         if weight_sum <= 0:
@@ -236,22 +243,38 @@ class DualTrust:
         severity: float = 2.0,
         reporter_id: Optional[str] = None,
         details: str = "",
+        is_system_verified: bool = False,
     ) -> ViolationEvent:
         """Report a behavioral violation with Sybil-resistant reporter discounting."""
         profile = self.get_or_create_agent(agent_id)
 
         # Compute reporter credibility weight to protect against malicious defamation
-        reporter_credibility = 1.0
-        if reporter_id:
+        if is_system_verified:
+            reporter_credibility = 1.0
+        elif reporter_id is None:
+            # Anonymous unauthenticated reports receive minimal credibility discount
+            reporter_credibility = 0.10
+        elif reporter_id == "system":
+            # Explicit system-level invocation
+            reporter_credibility = 1.0
+        else:
             reporter_agent = self.storage.get_agent(reporter_id)
             if reporter_agent:
-                reporter_credibility = (
-                    0.05 if reporter_agent.status == AgentStatus.QUARANTINED else reporter_agent.trust_score
-                )
+                if reporter_agent.status == AgentStatus.QUARANTINED:
+                    reporter_credibility = 0.05
+                elif reporter_agent.status == AgentStatus.RESTRICTED:
+                    reporter_credibility = min(0.25, reporter_agent.trust_score)
+                elif reporter_agent.status == AgentStatus.PROBATION:
+                    reporter_credibility = min(0.50, reporter_agent.trust_score)
+                else:
+                    reporter_credibility = reporter_agent.trust_score
             else:
                 reporter_human = self.storage.get_human(reporter_id)
                 if reporter_human:
-                    reporter_credibility = reporter_human.social_credit / 1000.0
+                    reporter_credibility = max(0.05, min(1.0, reporter_human.social_credit / 1000.0))
+                else:
+                    # Unregistered / nonexistent identity (Sybil spoof attempt)
+                    reporter_credibility = 0.05
 
         effective_severity = severity
         watchdog_quarantine = False
@@ -306,13 +329,15 @@ class DualTrust:
         severity: float = 3.0,
         reporter_id: Optional[str] = None,
     ) -> ViolationEvent:
-        """Convenience method: Flag an agent for causing user distress or rage."""
+        full_details = reason
+        sys_rep = reporter_id or "system"
         return self.report_violation(
             agent_id=agent_id,
             violation_type=ViolationType.USER_RAGE,
             severity=severity,
-            reporter_id=reporter_id,
-            details=reason,
+            reporter_id=sys_rep,
+            details=full_details,
+            is_system_verified=(reporter_id is None or reporter_id == "system"),
         )
 
     def flag_protocol_trespass(
@@ -325,12 +350,14 @@ class DualTrust:
     ) -> ViolationEvent:
         """Convenience method: Flag an agent for trespassing into unauthorized system queues."""
         full_details = f"Target: {target_system}. {details}"
+        sys_rep = reporter_id or "system"
         return self.report_violation(
             agent_id=agent_id,
             violation_type=ViolationType.PROTOCOL_TRESPASS,
             severity=severity,
-            reporter_id=reporter_id,
+            reporter_id=sys_rep,
             details=full_details,
+            is_system_verified=True,
         )
 
     def quarantine_agent(self, agent_id: str, reason: str = "Manual security isolation") -> AgentProfile:
@@ -413,6 +440,7 @@ class DualTrust:
         action_name: str = "action",
         arguments: Optional[Dict[str, Any]] = None,
         challenge_id: Optional[str] = None,
+        consume_challenge: bool = False,
     ) -> TrustVerdict:
         """Evaluate whether an action is authorized under the dual-trust matrix."""
         human = self.get_or_create_human(user_id)
@@ -445,6 +473,9 @@ class DualTrust:
                 elif ch.is_expired():
                     authorized = False
                     reasons.append(f"Challenge '{challenge_id}' has expired.")
+                elif ch.status == ChallengeStatus.CONSUMED:
+                    authorized = False
+                    reasons.append(f"Challenge '{challenge_id}' has already been consumed.")
                 elif ch.status != ChallengeStatus.APPROVED:
                     authorized = False
                     reasons.append(
@@ -540,6 +571,15 @@ class DualTrust:
                 refreshed_human = self.storage.get_human(user_id)
                 if refreshed_human:
                     human = refreshed_human
+
+        if authorized and consume_challenge and challenge_id:
+            now = time.time()
+            self.storage.update_challenge_status(
+                challenge_id=str(challenge_id),
+                status=ChallengeStatus.CONSUMED,
+                resolved_at=now,
+                reason="Consumed via dt.evaluate()",
+            )
 
         timestamp = time.time()
         nonce = uuid.uuid4().hex[:16]
@@ -736,9 +776,20 @@ class DualTrust:
                                 raise ChallengeVerificationError(
                                     f"Challenge '{challenge_id}' has expired (TTL exceeded)."
                                 )
+                            if ch.status == ChallengeStatus.CONSUMED:
+                                raise ChallengeVerificationError(
+                                    f"Challenge '{challenge_id}' has already been consumed."
+                                )
                             if ch.status != ChallengeStatus.APPROVED:
                                 raise ChallengeVerificationError(
                                     f"Challenge '{challenge_id}' is not approved (status: {ch.status.value})."
+                                )
+                            agent = self.get_agent(str(agent_id))
+                            if not agent:
+                                raise EntityNotFoundError(f"Agent '{agent_id}' does not exist.")
+                            if agent.status == AgentStatus.QUARANTINED:
+                                raise AgentQuarantinedError(
+                                    f"Agent '{agent_id}' is QUARANTINED and prohibited from executing gated actions despite challenge approval."
                                 )
                             canonical_args = json.dumps(dict(bound_args.arguments), sort_keys=True, separators=(",", ":"))
                             if ch.arguments_hash != hashlib.sha256(canonical_args.encode("utf-8")).hexdigest():
@@ -751,10 +802,23 @@ class DualTrust:
                                     raise InsufficientCreditsError(
                                         f"Insufficient spendable credits ({cost_credits} required)."
                                     )
+                            now = time.time()
+                            updated = self.storage.update_challenge_status(
+                                challenge_id=str(challenge_id),
+                                status=ChallengeStatus.CONSUMED,
+                                resolved_at=now,
+                                reason=f"Executed by gated action '{func.__name__}'",
+                            )
+                            if not updated:
+                                if cost_credits > 0 and deduct_cost:
+                                    self.storage.add_credits(user_id=str(user_id), amount=cost_credits)
+                                raise ChallengeVerificationError(
+                                    f"Challenge '{challenge_id}' could not be consumed (state conflict or already consumed)."
+                                )
                             self.ledger.append(
                                 event_type="ACTION_EXECUTED_WITH_CHALLENGE",
                                 entity_id=str(challenge_id),
-                                payload={"action_name": func.__name__, "user_id": str(user_id), "agent_id": str(agent_id)},
+                                payload={"action_name": func.__name__, "user_id": str(user_id), "agent_id": str(agent_id), "consumed_at": now},
                             )
                             res = await func(*args, **kwargs)
                             if self.watchdog is not None:
@@ -816,9 +880,20 @@ class DualTrust:
                                 raise ChallengeVerificationError(
                                     f"Challenge '{challenge_id}' has expired (TTL exceeded)."
                                 )
+                            if ch.status == ChallengeStatus.CONSUMED:
+                                raise ChallengeVerificationError(
+                                    f"Challenge '{challenge_id}' has already been consumed."
+                                )
                             if ch.status != ChallengeStatus.APPROVED:
                                 raise ChallengeVerificationError(
                                     f"Challenge '{challenge_id}' is not approved (status: {ch.status.value})."
+                                )
+                            agent = self.get_agent(str(agent_id))
+                            if not agent:
+                                raise EntityNotFoundError(f"Agent '{agent_id}' does not exist.")
+                            if agent.status == AgentStatus.QUARANTINED:
+                                raise AgentQuarantinedError(
+                                    f"Agent '{agent_id}' is QUARANTINED and prohibited from executing gated actions despite challenge approval."
                                 )
                             canonical_args = json.dumps(dict(bound_args.arguments), sort_keys=True, separators=(",", ":"))
                             if ch.arguments_hash != hashlib.sha256(canonical_args.encode("utf-8")).hexdigest():
@@ -831,10 +906,23 @@ class DualTrust:
                                     raise InsufficientCreditsError(
                                         f"Insufficient spendable credits ({cost_credits} required)."
                                     )
+                            now = time.time()
+                            updated = self.storage.update_challenge_status(
+                                challenge_id=str(challenge_id),
+                                status=ChallengeStatus.CONSUMED,
+                                resolved_at=now,
+                                reason=f"Executed by gated action '{func.__name__}'",
+                            )
+                            if not updated:
+                                if cost_credits > 0 and deduct_cost:
+                                    self.storage.add_credits(user_id=str(user_id), amount=cost_credits)
+                                raise ChallengeVerificationError(
+                                    f"Challenge '{challenge_id}' could not be consumed (state conflict or already consumed)."
+                                )
                             self.ledger.append(
                                 event_type="ACTION_EXECUTED_WITH_CHALLENGE",
                                 entity_id=str(challenge_id),
-                                payload={"action_name": func.__name__, "user_id": str(user_id), "agent_id": str(agent_id)},
+                                payload={"action_name": func.__name__, "user_id": str(user_id), "agent_id": str(agent_id), "consumed_at": now},
                             )
                             res = func(*args, **kwargs)
                             if self.watchdog is not None:
@@ -1501,6 +1589,8 @@ class DualTrust:
         if cost_credits > 0:
             deducted = self.storage.deduct_credits(user_id=mandate.user_id, amount=cost_credits)
             if not deducted:
+                # Compensating transaction: Rollback mandate consumption across hierarchy
+                self.mandate_manager.rollback_consumption(mandate_id=mandate_id, cost_credits=cost_credits)
                 raise InsufficientCreditsError(
                     f"Failed to deduct {cost_credits} credits from human principal '{mandate.user_id}'."
                 )

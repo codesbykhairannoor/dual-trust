@@ -30,6 +30,7 @@ class TestReflexionMemory(unittest.TestCase):
             violation_type=ViolationType.USER_RAGE,
             severity=3.0,
             details="User yelled at agent for sluggish response",
+            is_system_verified=True,
         )
         standing_medium = dt.get_agent_standing("agent_inspector")
         self.assertIn(standing_medium.risk_level, [RiskLevel.MEDIUM, RiskLevel.HIGH])

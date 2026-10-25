@@ -8,6 +8,7 @@ import unittest
 
 from dualtrust.engine import DualTrust
 from dualtrust.exceptions import (
+    AgentQuarantinedError,
     ChallengeVerificationError,
     HumanApprovalRequiredError,
     InsufficientCreditsError,
@@ -202,6 +203,57 @@ class TestHumanInTheLoopChallenge(unittest.TestCase):
         ok2, msg2 = dt.resolve_human_challenge(ch.challenge_id, approved=False)
         self.assertFalse(ok2)
         self.assertIn("already finalized", msg2.lower())
+
+    def test_gate_challenge_single_use_anti_replay(self) -> None:
+        """Verify that executing an action with an approved challenge marks it CONSUMED, preventing replay attacks."""
+        dt = self.dt
+
+        @dt.gate(require_human_confirmation=True, cost_credits=10)
+        def send_payout(user_id: str, agent_id: str, target: str) -> str:
+            return f"SENT TO {target}"
+
+        with self.assertRaises(HumanApprovalRequiredError) as ctx:
+            send_payout(user_id="alice", agent_id="finance_bot", target="vendor-1")
+
+        ch_id = ctx.exception.challenge.challenge_id
+
+        # Human approves
+        ok, _ = dt.resolve_human_challenge(ch_id, approved=True)
+        self.assertTrue(ok)
+
+        # First execution succeeds
+        res1 = send_payout(user_id="alice", agent_id="finance_bot", target="vendor-1", challenge_id=ch_id)
+        self.assertEqual(res1, "SENT TO vendor-1")
+
+        # Verify challenge is now marked CONSUMED in storage
+        consumed_ch = dt.get_challenge(ch_id)
+        self.assertEqual(consumed_ch.status, ChallengeStatus.CONSUMED)
+
+        # Second execution with same challenge_id MUST fail with ChallengeVerificationError
+        with self.assertRaises(ChallengeVerificationError) as ctx_replay:
+            send_payout(user_id="alice", agent_id="finance_bot", target="vendor-1", challenge_id=ch_id)
+        self.assertIn("already been consumed", str(ctx_replay.exception))
+
+    def test_gate_challenge_blocks_quarantined_agent(self) -> None:
+        """Verify that an approved challenge cannot be executed if agent was quarantined in the interim."""
+        dt = self.dt
+
+        @dt.gate(require_human_confirmation=True)
+        def trigger_launch(user_id: str, agent_id: str) -> str:
+            return "LAUNCHED"
+
+        with self.assertRaises(HumanApprovalRequiredError) as ctx:
+            trigger_launch(user_id="alice", agent_id="finance_bot")
+
+        ch_id = ctx.exception.challenge.challenge_id
+        dt.resolve_human_challenge(ch_id, approved=True)
+
+        # Agent commits a rogue infraction in the interim and is quarantined
+        dt.quarantine_agent("finance_bot", reason="Rogue protocol trespass")
+
+        # Execution must be blocked despite challenge approval
+        with self.assertRaises(AgentQuarantinedError):
+            trigger_launch(user_id="alice", agent_id="finance_bot", challenge_id=ch_id)
 
     def test_challenge_expiration_ttl(self) -> None:
         """Verify that expired challenge tokens cannot be resolved or executed."""

@@ -2,7 +2,7 @@
 
 Implements zero-dependency cryptographic delegation mandates for multi-agent swarms,
 conforming to the Principle of Least Privilege (PoLP) and Macaroons capability-based
-access control models.
+access control models with strict hierarchical budget reservation and cascading revocation.
 """
 
 from dataclasses import replace
@@ -27,15 +27,26 @@ from .models import DelegationMandate, MandateStatus
 class MandateManager:
     """Manages creation, cryptographic signing, tamper verification, and lifecycle of A2A delegation mandates."""
 
-    def __init__(self, secret_key: Optional[str] = None) -> None:
-        """Initialize the MandateManager with an HMAC signing secret."""
+    def __init__(self, secret_key: Optional[str] = None, storage: Optional[Any] = None) -> None:
+        """Initialize the MandateManager with an HMAC signing secret and optional persistent storage."""
         self._secret_key: bytes = (secret_key or secrets.token_hex(32)).encode("utf-8")
         self._mandates: Dict[str, DelegationMandate] = {}
+        self._storage = storage
         self._lock = threading.RLock()
+        if self._storage is not None and hasattr(self._storage, "get_all_mandates"):
+            for m in self._storage.get_all_mandates():
+                self._mandates[m.mandate_id] = m
+
+    def _record_mandate(self, mandate: DelegationMandate) -> None:
+        """Atomically update memory registry and persistent storage if configured."""
+        self._mandates[mandate.mandate_id] = mandate
+        if self._storage is not None and hasattr(self._storage, "save_mandate"):
+            self._storage.save_mandate(mandate)
 
     def _canonical_representation(
         self,
         mandate_id: str,
+        parent_mandate_id: Optional[str],
         parent_agent_id: str,
         sub_agent_id: str,
         user_id: str,
@@ -48,8 +59,9 @@ class MandateManager:
     ) -> str:
         """Construct the deterministic canonical string for cryptographic attestation."""
         sorted_actions = ",".join(sorted(allowed_actions))
+        parent_ref = parent_mandate_id or "ROOT"
         return (
-            f"{mandate_id}:{parent_agent_id}:{sub_agent_id}:{user_id}:"
+            f"{mandate_id}:{parent_ref}:{parent_agent_id}:{sub_agent_id}:{user_id}:"
             f"{sorted_actions}:{max_credits}:{max_depth}:{current_depth}:"
             f"{created_at:.4f}:{expires_at:.4f}"
         )
@@ -68,6 +80,7 @@ class MandateManager:
         ttl_seconds: float = 300.0,
         max_depth: int = 1,
         current_depth: int = 1,
+        parent_mandate_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> DelegationMandate:
         """Issue a cryptographically sealed delegation mandate authorizing a sub-agent to act on behalf of a parent."""
@@ -88,13 +101,21 @@ class MandateManager:
                 f"Cannot issue mandate: current_depth ({current_depth}) exceeds max_depth ({max_depth})."
             )
 
+        # Enforce explicit scope: Empty list or None is strictly rejected (prevent silent wildcard escalation)
+        if not allowed_actions:
+            raise DelegationError(
+                "allowed_actions cannot be empty or None; specify explicit actions or ['*'] for full scope."
+            )
+
+        cleaned_actions = sorted(list(set(allowed_actions)))
+
         now = time.time()
         expires_at = now + ttl_seconds
         mandate_id = secrets.token_hex(16)
-        cleaned_actions = sorted(list(set(allowed_actions or ["*"])))
 
         canonical = self._canonical_representation(
             mandate_id=mandate_id,
+            parent_mandate_id=parent_mandate_id,
             parent_agent_id=parent_agent_id,
             sub_agent_id=sub_agent_id,
             user_id=user_id,
@@ -115,6 +136,8 @@ class MandateManager:
             allowed_actions=cleaned_actions,
             max_credits=max_credits,
             credits_used=0,
+            reserved_child_credits=0,
+            parent_mandate_id=parent_mandate_id,
             max_depth=max_depth,
             current_depth=current_depth,
             created_at=now,
@@ -125,9 +148,9 @@ class MandateManager:
         )
 
         with self._lock:
-            self._mandates[mandate_id] = mandate
+            self._record_mandate(mandate)
 
-        return mandate
+        return replace(mandate)
 
     def verify_mandate(
         self,
@@ -142,6 +165,7 @@ class MandateManager:
         # 1. Cryptographic HMAC tamper check
         canonical = self._canonical_representation(
             mandate_id=mandate.mandate_id,
+            parent_mandate_id=mandate.parent_mandate_id,
             parent_agent_id=mandate.parent_agent_id,
             sub_agent_id=mandate.sub_agent_id,
             user_id=mandate.user_id,
@@ -156,36 +180,55 @@ class MandateManager:
         if not hmac.compare_digest(mandate.signature, expected_sig):
             return False, "Cryptographic signature mismatch: mandate has been forged or altered."
 
-        # 2. Status verification
         with self._lock:
             stored_mandate = self._mandates.get(mandate.mandate_id)
-            current_status = stored_mandate.status if stored_mandate else mandate.status
+            if not stored_mandate:
+                return False, f"Mandate '{mandate.mandate_id}' not found in authoritative registry."
+            current_status = stored_mandate.status
+            current_used = stored_mandate.credits_used
 
+            # 2. Check Ancestor Chain (Cascading Revocation & Hierarchical Validity)
+            curr_parent_id = stored_mandate.parent_mandate_id
+            while curr_parent_id:
+                ancestor = self._mandates.get(curr_parent_id)
+                if not ancestor:
+                    return False, f"Ancestor mandate '{curr_parent_id}' not found in registry."
+                if ancestor.status == MandateStatus.REVOKED:
+                    return False, f"Parent mandate '{ancestor.mandate_id}' in delegation chain has been revoked."
+                if ancestor.is_expired(now):
+                    return False, f"Parent mandate '{ancestor.mandate_id}' in delegation chain has expired."
+                if cost_credits > 0 and (ancestor.credits_used + cost_credits) > ancestor.max_credits:
+                    return False, f"Ancestor mandate '{ancestor.mandate_id}' credit budget exhausted."
+                curr_parent_id = ancestor.parent_mandate_id
+
+        # 3. Status verification
         if current_status == MandateStatus.REVOKED:
             return False, "Mandate has been revoked by the parent agent or human."
         if current_status == MandateStatus.EXHAUSTED:
             return False, "Mandate credit budget is exhausted."
 
-        # 3. Expiration check
+        # 4. Expiration check
         if mandate.is_expired(now):
             return False, f"Mandate token expired at {mandate.expires_at:.2f} (current: {now:.2f})."
 
-        # 4. Delegation depth check
+        # 5. Delegation depth check
         if mandate.current_depth > mandate.max_depth:
             return False, f"Mandate delegation depth ({mandate.current_depth}) exceeds maximum ({mandate.max_depth})."
 
-        # 5. Action scope check
+        # 6. Action scope check
         if action is not None and not mandate.can_perform(action):
             allowed_str = ", ".join(mandate.allowed_actions)
             return False, f"Action '{action}' is not permitted by mandate scope [{allowed_str}]."
 
-        # 6. Credit budget check
+        # 7. Credit budget check
         if cost_credits > 0:
-            with self._lock:
-                used = stored_mandate.credits_used if stored_mandate else mandate.credits_used
-            if (used + cost_credits) > mandate.max_credits:
-                remaining = max(0, mandate.max_credits - used)
-                return False, f"Insufficient mandate credit budget: requested {cost_credits}, remaining {remaining}."
+            effective_reserved = stored_mandate.reserved_child_credits
+            if (current_used + cost_credits + effective_reserved) > mandate.max_credits:
+                available = max(0, mandate.max_credits - current_used - effective_reserved)
+                return False, (
+                    f"Insufficient mandate credit budget: requested {cost_credits}, "
+                    f"available {available} ({effective_reserved} reserved for sub-mandates)."
+                )
 
         return True, "Mandate verified and authorized."
 
@@ -196,7 +239,7 @@ class MandateManager:
         cost_credits: int = 0,
         current_time: Optional[float] = None,
     ) -> DelegationMandate:
-        """Validate mandate policies and atomically deduct the action cost from the mandate budget."""
+        """Validate mandate policies and atomically deduct the action cost from child and all ancestor budgets."""
         with self._lock:
             mandate = self._mandates.get(mandate_id)
             if not mandate:
@@ -223,13 +266,67 @@ class MandateManager:
                     raise MandateBudgetExceededError(reason)
                 raise DelegationError(reason)
 
-            # Consume budget
-            if cost_credits > 0:
-                mandate.credits_used += cost_credits
-                if mandate.credits_used >= mandate.max_credits:
-                    mandate.status = MandateStatus.EXHAUSTED
+            # Consume budget in child mandate
+            new_used = mandate.credits_used + cost_credits
+            new_status = MandateStatus.EXHAUSTED if new_used >= mandate.max_credits else MandateStatus.ACTIVE
+            updated_mandate = replace(mandate, credits_used=new_used, status=new_status)
+            self._record_mandate(updated_mandate)
 
-            return mandate
+            # Hierarchical bubble-up: Deduct from all ancestors to prevent budget oversubscription
+            curr_parent_id = mandate.parent_mandate_id
+            while curr_parent_id:
+                ancestor = self._mandates.get(curr_parent_id)
+                if ancestor:
+                    anc_used = ancestor.credits_used + cost_credits
+                    anc_reserved = max(0, ancestor.reserved_child_credits - cost_credits)
+                    anc_status = MandateStatus.EXHAUSTED if anc_used >= ancestor.max_credits else MandateStatus.ACTIVE
+                    self._record_mandate(
+                        replace(
+                            ancestor,
+                            credits_used=anc_used,
+                            reserved_child_credits=anc_reserved,
+                            status=anc_status,
+                        )
+                    )
+                    curr_parent_id = ancestor.parent_mandate_id
+                else:
+                    break
+
+            return replace(updated_mandate)
+
+    def rollback_consumption(self, mandate_id: str, cost_credits: int) -> DelegationMandate:
+        """Rollback credit consumption on child and all ancestors (compensating transaction)."""
+        with self._lock:
+            mandate = self._mandates.get(mandate_id)
+            if not mandate:
+                raise DelegationError(f"Mandate '{mandate_id}' not found in registry.")
+
+            new_used = max(0, mandate.credits_used - cost_credits)
+            new_status = MandateStatus.ACTIVE if mandate.status == MandateStatus.EXHAUSTED else mandate.status
+            updated_mandate = replace(mandate, credits_used=new_used, status=new_status)
+            self._record_mandate(updated_mandate)
+
+            # Hierarchical rollback to all ancestors
+            curr_parent_id = mandate.parent_mandate_id
+            while curr_parent_id:
+                ancestor = self._mandates.get(curr_parent_id)
+                if ancestor:
+                    anc_used = max(0, ancestor.credits_used - cost_credits)
+                    anc_reserved = ancestor.reserved_child_credits + cost_credits
+                    anc_status = MandateStatus.ACTIVE if ancestor.status == MandateStatus.EXHAUSTED else ancestor.status
+                    self._record_mandate(
+                        replace(
+                            ancestor,
+                            credits_used=anc_used,
+                            reserved_child_credits=anc_reserved,
+                            status=anc_status,
+                        )
+                    )
+                    curr_parent_id = ancestor.parent_mandate_id
+                else:
+                    break
+
+            return replace(updated_mandate)
 
     def derive_sub_mandate(
         self,
@@ -240,7 +337,7 @@ class MandateManager:
         ttl_seconds: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> DelegationMandate:
-        """Derive an attenuated sub-mandate for a tertiary agent, enforcing monotonic attenuation."""
+        """Derive an attenuated sub-mandate enforcing hierarchical budget reservation and sibling anti-amplification."""
         with self._lock:
             parent = self._mandates.get(parent_mandate_id)
             if not parent:
@@ -264,7 +361,13 @@ class MandateManager:
             if allowed_actions is None:
                 derived_actions = list(parent.allowed_actions)
             else:
+                if len(allowed_actions) == 0:
+                    raise DelegationError("allowed_actions cannot be empty list in sub-mandate.")
                 if "*" not in parent.allowed_actions:
+                    if "*" in allowed_actions:
+                        raise MandateScopeViolationError(
+                            "Cannot escalate scope: sub-mandate cannot request wildcard '*' when parent mandate has restricted scope."
+                        )
                     for act in allowed_actions:
                         if act not in parent.allowed_actions:
                             raise MandateScopeViolationError(
@@ -272,16 +375,17 @@ class MandateManager:
                             )
                 derived_actions = allowed_actions
 
-            # Budget attenuation
-            remaining = parent.remaining_credits
+            # Hierarchical Budget Reservation (Anti-Fan-Out Sibling Amplification)
+            available_delegation = parent.available_for_delegation
             if max_credits is None:
-                derived_credits = remaining
+                derived_credits = available_delegation
             else:
                 if max_credits <= 0:
                     raise DelegationError(f"Sub-mandate max_credits must be strictly positive, got {max_credits}.")
-                if max_credits > remaining:
+                if max_credits > available_delegation:
                     raise MandateBudgetExceededError(
-                        f"Cannot allot {max_credits} credits: parent mandate only has {remaining} credits remaining."
+                        f"Cannot allocate {max_credits} credits: parent mandate only has {available_delegation} "
+                        f"credits available for delegation ({parent.reserved_child_credits} already reserved by sibling sub-mandates)."
                     )
                 derived_credits = max_credits
 
@@ -289,31 +393,63 @@ class MandateManager:
             max_ttl = max(1.0, parent.expires_at - now)
             derived_ttl = min(ttl_seconds, max_ttl) if ttl_seconds is not None else max_ttl
 
-        # Issue the derived mandate
-        return self.issue_mandate(
-            parent_agent_id=parent.sub_agent_id,
-            sub_agent_id=new_sub_agent_id,
-            user_id=parent.user_id,
-            allowed_actions=derived_actions,
-            max_credits=derived_credits,
-            ttl_seconds=derived_ttl,
-            max_depth=parent.max_depth,
-            current_depth=new_depth,
-            metadata=metadata,
-        )
+            # Reserve child budget in parent record
+            updated_parent = replace(parent, reserved_child_credits=parent.reserved_child_credits + derived_credits)
+            self._record_mandate(updated_parent)
+
+            # Issue the derived sub-mandate cryptographically bound to parent_mandate_id
+            return self.issue_mandate(
+                parent_agent_id=parent.sub_agent_id,
+                sub_agent_id=new_sub_agent_id,
+                user_id=parent.user_id,
+                allowed_actions=derived_actions,
+                max_credits=derived_credits,
+                ttl_seconds=derived_ttl,
+                max_depth=parent.max_depth,
+                current_depth=new_depth,
+                parent_mandate_id=parent.mandate_id,
+                metadata=metadata,
+            )
 
     def revoke_mandate(self, mandate_id: str, reason: str = "") -> bool:
-        """Revoke an active delegation mandate immediately."""
+        """Revoke an active delegation mandate, release unspent reserved quota to parent, and cascade to descendants."""
         with self._lock:
             mandate = self._mandates.get(mandate_id)
             if not mandate:
                 return False
-            mandate.status = MandateStatus.REVOKED
+
+            if mandate.status == MandateStatus.REVOKED:
+                return True
+
+            revoked_meta = dict(mandate.metadata)
             if reason:
-                mandate.metadata["revocation_reason"] = reason
+                revoked_meta["revocation_reason"] = reason
+
+            # Cascading revocation to all child descendants first
+            for mid, m in list(self._mandates.items()):
+                if m.parent_mandate_id == mandate_id and m.status != MandateStatus.REVOKED:
+                    self.revoke_mandate(mid, reason=f"Cascading revocation from parent '{mandate_id}'")
+
+            # Release unspent reserved budget back to parent
+            unspent = max(0, mandate.max_credits - mandate.credits_used)
+            if mandate.parent_mandate_id and unspent > 0:
+                parent = self._mandates.get(mandate.parent_mandate_id)
+                if parent:
+                    new_reserved = max(0, parent.reserved_child_credits - unspent)
+                    self._record_mandate(replace(parent, reserved_child_credits=new_reserved))
+
+            self._record_mandate(
+                replace(
+                    mandate,
+                    status=MandateStatus.REVOKED,
+                    metadata=revoked_meta,
+                )
+            )
+
             return True
 
     def get_mandate(self, mandate_id: str) -> Optional[DelegationMandate]:
-        """Retrieve a mandate by ID."""
+        """Retrieve an immutable mandate snapshot by ID."""
         with self._lock:
-            return self._mandates.get(mandate_id)
+            m = self._mandates.get(mandate_id)
+            return replace(m) if m is not None else None

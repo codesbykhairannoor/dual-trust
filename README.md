@@ -7,9 +7,9 @@
 [![Cryptographic Audit](https://img.shields.io/badge/audit-RFC%206962%20Merkle%20Tree-orange.svg)](https://github.com/codesbykhairannoor/dual-trust)
 [![A2A Protocol](https://img.shields.io/badge/A2A-Delegation%20Mandates-teal.svg)](https://github.com/codesbykhairannoor/dual-trust)
 [![Async Ready](https://img.shields.io/badge/async-Native%20Coroutines-purple.svg)](https://github.com/codesbykhairannoor/dual-trust)
-[![Tests](https://img.shields.io/badge/tests-118%20passed-brightgreen.svg)](https://github.com/codesbykhairannoor/dual-trust)
+[![Tests](https://img.shields.io/badge/tests-135%20passed-brightgreen.svg)](https://github.com/codesbykhairannoor/dual-trust)
 
-> **Enterprise-Grade Dual-Trust Matrix**: Human Social Credit and Autonomous AI Agent Reputation Engine with Asymmetric Exponential Slashing, Agent-to-Agent (A2A) Cryptographic Delegation Mandates, RFC 6962 Merkle Tree Proofs, NIST SP 800-63B Stepped Human Authorization, Anthropic MCP Gateway Middleware, Automated Behavioral Watchdogs, and Zero External Dependencies.
+> **Enterprise-Grade Dual-Trust Matrix**: Human Social Credit and Autonomous AI Agent Reputation Engine with Asymmetric Power-Law Slashing ($v^{1.8}$), Clustered Infraction Exponential Acceleration, Agent-to-Agent (A2A) Cryptographic Delegation Mandates, RFC 6962 Merkle Tree Proofs, NIST SP 800-63B Stepped Human Authorization, Anthropic MCP Gateway Middleware, Automated Behavioral Watchdogs, and Zero External Dependencies.
 
 
 ---
@@ -38,7 +38,7 @@ graph TD
     User["Human Intent / Smart Glasses Voice Command / MCP Tool Call"] --> Gateway["DualTrust Gateway (@dt.gate / DualTrustMCPGateway)"]
     Gateway --> Watchdog["0. Automated Watchdog<br/>• Sliding-Window Rate Limit<br/>• Credit Burn Velocity<br/>• Clustered Infraction Escalation"]
     Gateway --> HumanCheck["1. Human Social Credit Engine<br/>• Score Range: 0 - 1000<br/>• Clearance Tiers: Restricted -> Exemplary<br/>• Spendable Token Balances"]
-    Gateway --> AgentCheck["2. Agent Reputation Engine<br/>• Beta Prior: E(p) = α / (α + β)<br/>• Continuous Half-Life Time Decay<br/>• Asymmetric Exponential Slashing"]
+    Gateway --> AgentCheck["2. Agent Reputation Engine<br/>• Beta Prior: E(p) = α / (α + β)<br/>• Continuous Half-Life Time Decay<br/>• Asymmetric Power-Law Slashing (v^1.8)"]
     Gateway --> HITLCheck["3. NIST SP 800-63B Stepped HITL<br/>• Single-Use Sealed Challenge<br/>• SHA-256 Argument Tamper Proof<br/>• Nonce & TTL Verification"]
     
     Watchdog --> Matrix{"Dual-Trust Matrix<br/>Evaluation"}
@@ -48,7 +48,7 @@ graph TD
     
     Matrix -- "Score Insufficient / Bursted / Quarantined" --> Denied["❌ BLOCKED<br/>• AuthorizationDeniedError<br/>• VelocityLimitExceededError<br/>• AgentQuarantinedError<br/>• (MCP: isError=true for LLM Reflexion)"]
     Matrix -- "Human Approval Required" --> Paused["⏸️ PAUSED<br/>• HumanApprovalRequiredError<br/>• Challenge Token Issued"]
-    Matrix -- "Dual Criteria Met" --> Approved["✅ AUTHORIZED<br/>• Atomic Credit Deduction<br/>• HMAC-SHA256 Signed Receipt<br/>• RFC 6962 Merkle Audit Block"]
+    Matrix -- "Dual Criteria Met" --> Approved["✅ AUTHORIZED<br/>• Two-Phase Atomic Deduction<br/>• HMAC-SHA256 Signed Receipt<br/>• RFC 6962 Merkle Audit Block"]
     
     Approved --> Execution["Execute Tool / Physical Actuator<br/>(LangChain / CrewAI / OpenAI / Anthropic MCP)"]
 ```
@@ -62,9 +62,9 @@ graph TD
 * **Microsecond Latency Overhead**: Median policy evaluation completes in **~24 microseconds** ($0.024\text{ ms}$), leaving LLM execution unhindered.
 * **Anthropic Model Context Protocol (MCP) Gateway Middleware**: Transparent JSON-RPC 2.0 interceptor (`DualTrustMCPGateway`) for `tools/list` and `tools/call`. Returns `isError: true` inside the result block so LLMs (like Claude) receive the rejection explanation directly in context for autonomous self-correction.
 * **Stepped Human-in-the-Loop (HITL) Authorization (NIST SP 800-63B)**: Cryptographically sealed single-use tokens protecting against parameter tampering and TOCTOU attacks via canonical arguments hashing (`sha256(canonical_json(arguments))`).
-* **Automated Reputation Watchdog**: Real-time sliding-window telemetry tracking action velocity (calls/sec), credit depletion velocity (burn/sec), and infraction clusters with escalating exponential slashing and auto-quarantine (MITRE ATLAS AML.T0029, AML.T0040).
+* **Automated Reputation Watchdog**: Real-time sliding-window telemetry tracking action velocity (calls/sec), credit depletion velocity (burn/sec), and infraction clusters with escalating exponential burst multipliers ($m^k$) and auto-quarantine (MITRE ATLAS AML.T0029, AML.T0040).
 * **Princeton Reflexion & MemGPT Immortal Core Memory**: Persistent verbal reinforcement critique (`record_reflection`) and un-deletable XML system prompt injection (`build_core_memory_prompt`).
-* **RFC 6962 Merkle Tree Audit Proofs**: External clients can verify that a specific authorization verdict was committed into the immutable log without downloading the entire ledger.
+* **RFC 6962 Merkle Tree Audit Proofs**: RFC 6962 Certificate Transparency compliant inclusion proofs utilizing 0x00 leaf and 0x01 internal node domain separation prefixes, cryptographically resisting second-preimage collision attacks.
 * **High-Throughput SQLite WAL Engine**: Optimized SQLite Write-Ahead Logging with thread-local connection pooling and atomic balance deductions (`deduct_credits`) preventing race-condition overdrafts.
 * **Continuous Half-Life Time Decay**: Reputation mathematically decays toward uninformative baseline prior based on real wall-clock elapsed time ($t_{1/2} = 14\text{ days}$).
 * **Native Multi-Agent Adapters**: Drop-in integrations for **Anthropic MCP**, **LangChain / LangGraph**, **CrewAI**, and **OpenAI Function Calling**.
@@ -358,7 +358,7 @@ mandate = dt.create_delegation_mandate(
     max_depth=2                                          # Max sub-delegation hops
 )
 
-# 3. Gated Delegated Tool Execution with Atomic Dual-Pool Deduction
+# 3. Gated Delegated Tool Execution with Two-Phase Atomic Dual-Pool Deduction
 @dt.gate_delegated(action="reserve_seat", cost_credits=25)
 def book_flight(mandate_id: str, flight_no: str) -> dict:
     return {"flight": flight_no, "status": "CONFIRMED"}
@@ -367,7 +367,7 @@ def book_flight(mandate_id: str, flight_no: str) -> dict:
 result = book_flight(mandate_id=mandate.mandate_id, flight_no="GA-101")
 print(result)
 # Output: {'flight': 'GA-101', 'status': 'CONFIRMED'}
-# -> Automatically deducted 25 credits from mandate AND Alice's human wallet!
+# -> Two-phase atomic deduction: validates & reserves mandate quota, atomically deducts Alice's wallet, and performs compensating rollback if wallet deduction fails!
 
 # 4. Out-of-Scope Attempt Triggers Auto-Whistleblowing
 try:
@@ -398,14 +398,14 @@ $$E(p) = \frac{\alpha_t}{\alpha_t + \beta_t}$$
 
 Where $\tau_{\text{half-life}} = 14\text{ days}$ ($1,209,600\text{ seconds}$). An agent inactive for 14 days loses half of its excess earned reputation, smoothly regressing to the baseline prior ($0.50$).
 
-### 2. Asymmetric Exponential Slashing & Active Recovery
+### 2. Asymmetric Power-Law Slashing ($v^{1.8}$) with Clustered Infraction Exponential Acceleration & Active Recovery
 
 $$\Delta \beta = k_p \cdot (\text{severity} \cdot C_{\text{reporter}}) \cdot v^{\gamma} \cdot m^k$$
 
 * $k_p = 3.5$ (Asymmetric penalty multiplier).
 * $C_{\text{reporter}} \in [0.05, 1.0]$ (Reporter credibility discount).
-* $v$ (Repeat violation count).
-* $\gamma = 1.8$ (Slashing escalation exponent).
+* $v$ (Repeat violation count, scaled polynomially as power-law $v^{1.8}$).
+* $\gamma = 1.8$ (Power-law escalation exponent).
 * $m^k$ (Watchdog velocity multiplier: scales exponentially with clustered infractions in sliding window).
 * **Active Recovery**: Every 20 consecutive compliant actions decrements $v \leftarrow \max(0, v - 1)$, preventing permanent quarantine under noisy network conditions.
 

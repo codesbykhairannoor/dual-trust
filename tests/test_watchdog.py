@@ -111,6 +111,7 @@ class TestAgentWatchdog(unittest.TestCase):
             agent_id="bot_worker",
             violation_type=ViolationType.RESOURCE_EXHAUSTION,
             severity=1.0,
+            is_system_verified=True,
         )
         p1 = v1.penalty_applied
 
@@ -119,6 +120,7 @@ class TestAgentWatchdog(unittest.TestCase):
             agent_id="bot_worker",
             violation_type=ViolationType.RESOURCE_EXHAUSTION,
             severity=1.0,
+            is_system_verified=True,
         )
         p2 = v2.penalty_applied
         self.assertGreater(p2, p1)
@@ -128,6 +130,7 @@ class TestAgentWatchdog(unittest.TestCase):
             agent_id="bot_worker",
             violation_type=ViolationType.RESOURCE_EXHAUSTION,
             severity=1.0,
+            is_system_verified=True,
         )
         agent = self.dt.get_agent("bot_worker")
         self.assertEqual(agent.status, AgentStatus.QUARANTINED)
