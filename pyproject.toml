@@ -4,14 +4,14 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dualtrust"
-version = "0.3.0"
+version = "0.3.1"
 description = "Dual-Trust Matrix: Human Social Credit and Autonomous AI Agent Reputation Engine with Rogue Quarantine."
 
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "DualTrust Contributors", email = "maintainers@dualtrust.dev" }
+    { name = "Khairan Noor", email = "khairking6@gmail.com" }
 ]
 keywords = [
     "ai-agents",
@@ -40,9 +40,10 @@ classifiers = [
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/dualtrust/dualtrust"
-Repository = "https://github.com/dualtrust/dualtrust"
-Documentation = "https://github.com/dualtrust/dualtrust#readme"
+Homepage = "https://github.com/codesbykhairannoor/dual-trust"
+Repository = "https://github.com/codesbykhairannoor/dual-trust"
+Documentation = "https://github.com/codesbykhairannoor/dual-trust#readme"
+"Bug Tracker" = "https://github.com/codesbykhairannoor/dual-trust/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dualtrust"]
