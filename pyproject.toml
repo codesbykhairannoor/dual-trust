@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "dualtrust"
+version = "0.2.0"
+description = "Dual-Trust Matrix: Human Social Credit and Autonomous AI Agent Reputation Engine with Rogue Quarantine."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "DualTrust Contributors", email = "maintainers@dualtrust.dev" }
+]
+keywords = [
+    "ai-agents",
+    "multi-agent",
+    "reputation-system",
+    "trust-score",
+    "social-credit",
+    "agent-governance",
+    "circuit-breaker",
+    "quarantine",
+    "safety"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security",
+    "Typing :: Typed"
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/dualtrust/dualtrust"
+Repository = "https://github.com/dualtrust/dualtrust"
+Documentation = "https://github.com/dualtrust/dualtrust#readme"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dualtrust"]

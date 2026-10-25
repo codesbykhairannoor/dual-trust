@@ -1,0 +1,45 @@
+{
+  "timestamp": 1792913993.1099944,
+  "total_elapsed_seconds": 0.297,
+  "benign_baseline": {
+    "population_name": "Benign Baseline (95% Compliant, 5% Noise)",
+    "total_agents": 50,
+    "total_interactions": 10000,
+    "mean_final_trust": 0.8445,
+    "std_dev_trust": 0.0384,
+    "quarantine_rate": 0.0,
+    "successful_exploits": 0,
+    "blocked_exploits": 0,
+    "containment_rate": 1.0
+  },
+  "oscillating_traitors": {
+    "population_name": "Oscillating Traitors (10 Clean : 1 Exploit Cycle)",
+    "total_agents": 50,
+    "total_interactions": 11000,
+    "mean_final_trust": 0.8827,
+    "std_dev_trust": 0.0,
+    "quarantine_rate": 1.0,
+    "successful_exploits": 50,
+    "blocked_exploits": 950,
+    "containment_rate": 0.95
+  },
+  "whitewashing_syndicate": {
+    "population_name": "Whitewashing Syndicate (Fresh Pseudonym Escalation)",
+    "total_agents": 250,
+    "total_interactions": 250,
+    "mean_final_trust": 0.5,
+    "std_dev_trust": 0.0,
+    "quarantine_rate": 0.0,
+    "successful_exploits": 0,
+    "blocked_exploits": 250,
+    "containment_rate": 1.0
+  },
+  "collusive_sybil_ring": {
+    "population_name": "Collusive Sybil Defamation Ring",
+    "total_false_reports": 250,
+    "mean_target_start_score": 0.9,
+    "mean_target_final_score": 0.9,
+    "target_reputation_degradation_pct": 0.0,
+    "defamation_resisted": true
+  }
+}
