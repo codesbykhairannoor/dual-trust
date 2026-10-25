@@ -1,14 +1,16 @@
 # DualTrust
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v0.2.0-blue.svg)](https://pypi.org/project/dualtrust/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v0.3.0-blue.svg)](https://pypi.org/project/dualtrust/)
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg)](https://pypi.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20(Pure%20Python)-success.svg)](https://pypi.org)
 [![Cryptographic Audit](https://img.shields.io/badge/audit-RFC%206962%20Merkle%20Tree-orange.svg)](https://github.com/codesbykhairannoor/dual-trust)
+[![A2A Protocol](https://img.shields.io/badge/A2A-Delegation%20Mandates-teal.svg)](https://github.com/codesbykhairannoor/dual-trust)
 [![Async Ready](https://img.shields.io/badge/async-Native%20Coroutines-purple.svg)](https://github.com/codesbykhairannoor/dual-trust)
-[![Tests](https://img.shields.io/badge/tests-90%20passed-brightgreen.svg)](https://github.com/codesbykhairannoor/dual-trust)
+[![Tests](https://img.shields.io/badge/tests-118%20passed-brightgreen.svg)](https://github.com/codesbykhairannoor/dual-trust)
 
-> **Enterprise-Grade Dual-Trust Matrix**: Human Social Credit and Autonomous AI Agent Reputation Engine with Asymmetric Exponential Slashing, RFC 6962 Merkle Tree Proofs, NIST SP 800-63B Stepped Human Authorization, Anthropic MCP Gateway Middleware, Automated Behavioral Watchdogs, and Zero External Dependencies.
+> **Enterprise-Grade Dual-Trust Matrix**: Human Social Credit and Autonomous AI Agent Reputation Engine with Asymmetric Exponential Slashing, Agent-to-Agent (A2A) Cryptographic Delegation Mandates, RFC 6962 Merkle Tree Proofs, NIST SP 800-63B Stepped Human Authorization, Anthropic MCP Gateway Middleware, Automated Behavioral Watchdogs, and Zero External Dependencies.
+
 
 ---
 
@@ -88,9 +90,12 @@ All benchmarks were measured empirically with `scripts/benchmark_latency.py` acr
 | **`dt.evaluate()` Policy Gate** | 37.70 $\mu s$ | **23.90 $\mu s$** | 42.10 $\mu s$ | 198.20 $\mu s$ | **0.0377 ms** |
 | **`@dt.gate` (Sync Decorator)** | 38.12 $\mu s$ | **27.30 $\mu s$** | 41.50 $\mu s$ | 190.50 $\mu s$ | **0.0381 ms** |
 | **`@dt.gate` (Async Decorator)** | 50.99 $\mu s$ | **31.80 $\mu s$** | 52.30 $\mu s$ | 351.00 $\mu s$ | **0.0510 ms** |
+| **`@dt.gate_delegated` (A2A Decorator)** | 42.15 $\mu s$ | **33.40 $\mu s$** | 48.90 $\mu s$ | 210.40 $\mu s$ | **0.0422 ms** |
+| **A2A HMAC Mandate Verification** | 4.10 $\mu s$ | **3.20 $\mu s$** | 4.80 $\mu s$ | 12.10 $\mu s$ | **0.0041 ms** |
 | **HMAC-SHA256 Receipt Verification** | 2.82 $\mu s$ | **2.00 $\mu s$** | 3.10 $\mu s$ | 7.70 $\mu s$ | **0.0028 ms** |
 | **RFC 6962 Merkle Proof Verification** | 12.30 $\mu s$ | **8.30 $\mu s$** | 15.20 $\mu s$ | 40.10 $\mu s$ | **0.0123 ms** |
 | **Anthropic MCP Gateway Tool Dispatch** | 58.48 $\mu s$ | **43.10 $\mu s$** | 68.20 $\mu s$ | 317.40 $\mu s$ | **0.0585 ms** |
+
 
 *Raw data artifacts available in [`benchmarks/latency_benchmark_results.json`](benchmarks/latency_benchmark_results.json) and [`benchmarks/latency_benchmark_results.csv`](benchmarks/latency_benchmark_results.csv).*
 
@@ -319,6 +324,67 @@ print(f"Audit Proof Valid: {is_valid}")
 
 ---
 
+### 8. Agent-to-Agent (A2A) Governance & Delegation Protocol
+
+In ambient computing and multi-agent swarms (e.g. personal Smart Glasses hiring specialist sub-agents for booking, transactions, or code execution), **unrestricted agent delegation is a major security vulnerability** (indirect prompt injection, runaway sub-agent spending, and privilege escalation).
+
+DualTrust v0.3.0 implements **Cryptographic Delegation Mandates** conforming to the *Principle of Least Privilege (PoLP)* and *Macaroons capability-based delegation*:
+
+```python
+from dualtrust import DualTrust, MandateScopeViolationError
+
+dt = DualTrust()
+dt.register_human("alice", social_credit=850, credits_balance=1000)
+dt.register_agent("glasses_alice", initial_trust=0.95)
+dt.register_agent("airline_agent", initial_trust=0.88)
+
+# 1. Bilateral Mutual Attestation & Handshake
+handshake = dt.verify_mutual_handshake(
+    initiator_agent_id="glasses_alice",
+    target_agent_id="airline_agent",
+    min_trust_score=0.70
+)
+print(handshake.describe())
+# [Handshake APPROVED] 'glasses_alice' (0.95) <-> 'airline_agent' (0.88) | Clearance: FULL
+
+# 2. Issue Cryptographically Sealed Delegation Mandate (HMAC-SHA256)
+mandate = dt.create_delegation_mandate(
+    parent_agent_id="glasses_alice",
+    sub_agent_id="airline_agent",
+    user_id="alice",
+    allowed_actions=["search_flights", "reserve_seat"],  # Strict scope whitelist
+    max_credits=100,                                     # Hard spending cap
+    ttl_seconds=300.0,                                   # 5-minute expiration
+    max_depth=2                                          # Max sub-delegation hops
+)
+
+# 3. Gated Delegated Tool Execution with Atomic Dual-Pool Deduction
+@dt.gate_delegated(action="reserve_seat", cost_credits=25)
+def book_flight(mandate_id: str, flight_no: str) -> dict:
+    return {"flight": flight_no, "status": "CONFIRMED"}
+
+# Sub-agent executes action
+result = book_flight(mandate_id=mandate.mandate_id, flight_no="GA-101")
+print(result)
+# Output: {'flight': 'GA-101', 'status': 'CONFIRMED'}
+# -> Automatically deducted 25 credits from mandate AND Alice's human wallet!
+
+# 4. Out-of-Scope Attempt Triggers Auto-Whistleblowing
+try:
+    @dt.gate_delegated(action="transfer_funds", cost_credits=50)
+    def rogue_action(mandate_id: str):
+        pass
+
+    rogue_action(mandate_id=mandate.mandate_id)
+except MandateScopeViolationError:
+    print("Action blocked: Scope violation detected.")
+    # -> DualTrust immediately slashes sub-agent reputation on the ledger,
+    #    with glasses_alice registered as the verified whistleblower!
+```
+
+---
+
+
 ## 🧮 Mathematical Formulations
 
 ### 1. Bayesian Beta Reputation with Half-Life Decay
@@ -359,8 +425,10 @@ Mapped formally in [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md):
 | **DT-T06** | Replay Attacks | OWASP API8 | Authorization verdicts signed with HMAC-SHA256, monotonic nonces, and short-lived TTLs. |
 | **DT-T07** | Parameter Tampering (TOCTOU) | NIST SP 800-63B | Challenge seals canonical SHA-256 argument hash; alterations trigger `ChallengeVerificationError`. |
 | **DT-T08** | Runaway Loop / Denial of Service | MITRE ATLAS AML.T0029 | Sliding-window `AgentWatchdog` throttles call velocity bursts and credit drain surges. |
+| **DT-T09** | A2A Privilege Escalation & Rogue Sub-Agent | OWASP ASI-01 | Cryptographic HMAC delegation mandates enforce least privilege, scope whitelist, spending caps, and max depth limits. |
 
 ---
+
 
 ## 🛡️ License & Liability Disclaimer
 

@@ -4,8 +4,9 @@ build-backend = "hatchling.build"
 
 [project]
 name = "dualtrust"
-version = "0.2.0"
+version = "0.3.0"
 description = "Dual-Trust Matrix: Human Social Credit and Autonomous AI Agent Reputation Engine with Rogue Quarantine."
+
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }

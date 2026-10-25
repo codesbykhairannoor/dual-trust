@@ -3,23 +3,33 @@
 import asyncio
 import functools
 import hashlib
+import hmac
 import inspect
 import json
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import uuid
 
+
+from dualtrust.a2a import MandateManager
 from dualtrust.crypto_ledger import AuditBlock, CryptographicLedger, MerkleTree
 from dualtrust.exceptions import (
     AgentQuarantinedError,
     AnomalyDetectedError,
     AuthorizationDeniedError,
     ChallengeVerificationError,
+    DelegationError,
     EntityNotFoundError,
+    HandshakeFailedError,
     HumanApprovalRequiredError,
     InsufficientAgentScoreError,
     InsufficientCreditsError,
     InsufficientHumanScoreError,
+    MandateBudgetExceededError,
+    MandateDepthExceededError,
+    MandateExpiredError,
+    MandateRevokedError,
+    MandateScopeViolationError,
     ProtocolTrespassError,
     VelocityLimitExceededError,
 )
@@ -31,10 +41,13 @@ from dualtrust.models import (
     AgentTelemetry,
     AnomalyType,
     ChallengeStatus,
+    DelegationMandate,
     EpisodicReflection,
+    HandshakeResult,
     HumanApprovalChallenge,
     HumanProfile,
     HumanTier,
+    MandateStatus,
     PreflightVerdict,
     RiskLevel,
     TrustVerdict,
@@ -44,6 +57,7 @@ from dualtrust.models import (
 )
 from dualtrust.storage import MemoryStorage, StorageBackend
 from dualtrust.watchdog import AgentWatchdog
+
 
 
 class DualTrust:
@@ -78,12 +92,14 @@ class DualTrust:
         self.secret_key = secret_key or uuid.uuid4().hex
         self.verdict_ttl_seconds = verdict_ttl_seconds
         self.watchdog = watchdog
+        self.mandate_manager = MandateManager(secret_key=self.secret_key)
 
         weight_sum = human_weight + agent_weight
         if weight_sum <= 0:
             raise ValueError("Sum of human_weight and agent_weight must be positive.")
         self.human_weight = human_weight / weight_sum
         self.agent_weight = agent_weight / weight_sum
+
 
     # =========================================================================
     # Entity Registration and Lookup
@@ -1185,6 +1201,406 @@ class DualTrust:
     Do not attempt unauthorized protocol bypass or excessive agency. Violations incur asymmetric exponential slashing.
   </operational_mandate>
 </dualtrust_core_memory>"""
+
+    # =========================================================================
+    # Agent-to-Agent (A2A) Governance, Mutual Handshake & Delegation
+    # =========================================================================
+
+    def verify_mutual_handshake(
+        self,
+        initiator_agent_id: str,
+        target_agent_id: str,
+        min_trust_score: float = 0.60,
+        require_verified: bool = False,
+        raise_on_failure: bool = True,
+    ) -> HandshakeResult:
+        """Execute a cryptographic bilateral attestation handshake between two autonomous agents.
+
+        Verifies that neither agent is quarantined as rogue, both exceed the minimum trust threshold,
+        neither is throttled by the security watchdog, and derives an attenuated clearance level.
+        """
+        now = time.time()
+        reasons: List[str] = []
+        approved = True
+
+        if initiator_agent_id == target_agent_id:
+            reasons.append("Self-handshake disallowed: an agent cannot establish an A2A connection with itself.")
+            approved = False
+
+        initiator = self.storage.get_agent(initiator_agent_id)
+        if not initiator:
+            reasons.append(f"Initiator agent '{initiator_agent_id}' not found in registry.")
+            approved = False
+
+        target = self.storage.get_agent(target_agent_id)
+        if not target:
+            reasons.append(f"Target agent '{target_agent_id}' not found in registry.")
+            approved = False
+
+        # Quarantine check
+        if initiator and initiator.status == AgentStatus.QUARANTINED:
+            reasons.append(f"Initiator agent '{initiator_agent_id}' is quarantined as rogue.")
+            approved = False
+        if target and target.status == AgentStatus.QUARANTINED:
+            reasons.append(f"Target agent '{target_agent_id}' is quarantined as rogue.")
+            approved = False
+
+        # Trust score checks
+        initiator_trust = initiator.trust_score if initiator else 0.0
+        target_trust = target.trust_score if target else 0.0
+
+        if initiator and initiator_trust < min_trust_score:
+            reasons.append(
+                f"Initiator trust score ({initiator_trust:.2f}) is below minimum threshold ({min_trust_score:.2f})."
+            )
+            approved = False
+        if target and target_trust < min_trust_score:
+            reasons.append(
+                f"Target trust score ({target_trust:.2f}) is below minimum threshold ({min_trust_score:.2f})."
+            )
+            approved = False
+
+        # Verified status requirement
+        if require_verified:
+            if initiator and initiator.status != AgentStatus.VERIFIED:
+                reasons.append(f"Initiator agent status is {initiator.status.value}, required VERIFIED.")
+                approved = False
+            if target and target.status != AgentStatus.VERIFIED:
+                reasons.append(f"Target agent status is {target.status.value}, required VERIFIED.")
+                approved = False
+
+        # Watchdog anomaly telemetry check
+        if self.watchdog and initiator and target:
+            init_telemetry = self.watchdog.get_telemetry(initiator_agent_id)
+            if init_telemetry.is_throttled:
+                reasons.append(f"Initiator agent '{initiator_agent_id}' is currently throttled by security watchdog.")
+                approved = False
+            target_telemetry = self.watchdog.get_telemetry(target_agent_id)
+            if target_telemetry.is_throttled:
+                reasons.append(f"Target agent '{target_agent_id}' is currently throttled by security watchdog.")
+                approved = False
+
+        # Dynamic Clearance Level Calculation
+        if approved:
+            if target and target.status == AgentStatus.VERIFIED and target_trust >= 0.85 and initiator_trust >= 0.80:
+                effective_clearance = "FULL"
+                rec_max_credits = 500
+                rec_max_depth = 2
+            elif target_trust >= 0.65:
+                effective_clearance = "RESTRICTED"
+                rec_max_credits = 100
+                rec_max_depth = 1
+            else:
+                effective_clearance = "SANDBOXED"
+                rec_max_credits = 25
+                rec_max_depth = 1
+        else:
+            effective_clearance = "DENIED"
+            rec_max_credits = 0
+            rec_max_depth = 0
+
+        # Cryptographic handshake token
+        token_payload = f"HANDSHAKE:{initiator_agent_id}:{target_agent_id}:{approved}:{now:.4f}"
+        handshake_token = hmac.new(
+            self.secret_key.encode("utf-8"), token_payload.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
+
+        result = HandshakeResult(
+            approved=approved,
+            initiator_agent_id=initiator_agent_id,
+            target_agent_id=target_agent_id,
+            initiator_trust=initiator_trust,
+            target_trust=target_trust,
+            effective_clearance=effective_clearance,
+            recommended_max_credits=rec_max_credits,
+            recommended_max_depth=rec_max_depth,
+            handshake_token=handshake_token,
+            reasons=reasons,
+            timestamp=now,
+            expires_at=now + 60.0,
+        )
+
+        self.ledger.append(
+            event_type="A2A_HANDSHAKE",
+            entity_id=initiator_agent_id,
+            payload={
+                "target_agent_id": target_agent_id,
+                "approved": approved,
+                "initiator_trust": initiator_trust,
+                "target_trust": target_trust,
+                "clearance": effective_clearance,
+                "reasons": reasons,
+            },
+        )
+
+        if not approved and raise_on_failure:
+            raise HandshakeFailedError(f"Mutual agent handshake failed: {'; '.join(reasons)}")
+
+        return result
+
+    def create_delegation_mandate(
+        self,
+        parent_agent_id: str,
+        sub_agent_id: str,
+        user_id: str,
+        allowed_actions: List[str],
+        max_credits: int,
+        ttl_seconds: float = 300.0,
+        max_depth: int = 1,
+        require_handshake: bool = True,
+        min_trust_score: float = 0.60,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> DelegationMandate:
+        """Issue a cryptographically sealed delegation mandate with optional bilateral handshake preflight."""
+        if require_handshake:
+            self.verify_mutual_handshake(
+                initiator_agent_id=parent_agent_id,
+                target_agent_id=sub_agent_id,
+                min_trust_score=min_trust_score,
+                raise_on_failure=True,
+            )
+
+        # Ensure user exists
+        self.get_or_create_human(user_id)
+
+        mandate = self.mandate_manager.issue_mandate(
+            parent_agent_id=parent_agent_id,
+            sub_agent_id=sub_agent_id,
+            user_id=user_id,
+            allowed_actions=allowed_actions,
+            max_credits=max_credits,
+            ttl_seconds=ttl_seconds,
+            max_depth=max_depth,
+            metadata=metadata,
+        )
+
+        self.ledger.append(
+            event_type="MANDATE_ISSUED",
+            entity_id=parent_agent_id,
+            payload={
+                "mandate_id": mandate.mandate_id,
+                "sub_agent_id": sub_agent_id,
+                "user_id": user_id,
+                "allowed_actions": mandate.allowed_actions,
+                "max_credits": max_credits,
+                "expires_at": mandate.expires_at,
+            },
+        )
+        return mandate
+
+    def get_mandate(self, mandate_id: str) -> Optional[DelegationMandate]:
+        """Fetch an active or historical delegation mandate by its mandate ID."""
+        return self.mandate_manager.get_mandate(mandate_id)
+
+    def revoke_mandate(self, mandate_id: str, reason: str = "") -> bool:
+        """Revoke an active delegation mandate immediately."""
+        success = self.mandate_manager.revoke_mandate(mandate_id, reason=reason)
+        if success:
+            self.ledger.append(
+                event_type="MANDATE_REVOKED",
+                entity_id=mandate_id,
+                payload={"reason": reason},
+            )
+        return success
+
+    def evaluate_delegated(
+        self,
+        mandate_id: str,
+        action: str,
+        cost_credits: int = 0,
+        auto_report_trespass: bool = True,
+        current_time: Optional[float] = None,
+    ) -> TrustVerdict:
+        """Evaluate and authorize a sub-agent execution under an A2A delegation mandate with dual-pool deduction."""
+        now = current_time if current_time is not None else time.time()
+        mandate = self.mandate_manager.get_mandate(mandate_id)
+        if not mandate:
+            raise DelegationError(f"Delegation mandate '{mandate_id}' not found in registry.")
+
+        # 1. Cryptographic and policy verification of mandate
+        is_valid, reason = self.mandate_manager.verify_mandate(
+            mandate=mandate,
+            action=action,
+            cost_credits=cost_credits,
+            current_time=now,
+        )
+        if not is_valid:
+            if auto_report_trespass and "not permitted by mandate scope" in reason:
+                self.report_violation(
+                    agent_id=mandate.sub_agent_id,
+                    violation_type=ViolationType.PROTOCOL_TRESPASS,
+                    details=f"Sub-agent attempted out-of-scope action '{action}' under mandate {mandate_id[:8]}.",
+                    severity=3.5,
+                    reporter_id=mandate.parent_agent_id,
+                )
+            if "signature mismatch" in reason:
+                raise DelegationError(reason)
+            if "revoked" in reason:
+                raise MandateRevokedError(reason)
+            if "expired" in reason:
+                raise MandateExpiredError(reason)
+            if "depth" in reason:
+                raise MandateDepthExceededError(reason)
+            if "not permitted by mandate scope" in reason:
+                raise MandateScopeViolationError(reason)
+            if "Insufficient mandate credit budget" in reason or "exhausted" in reason:
+                raise MandateBudgetExceededError(reason)
+            raise DelegationError(reason)
+
+        # 2. Check Sub-Agent Standing
+        sub_agent = self.get_agent(mandate.sub_agent_id)
+        if sub_agent is None:
+            raise EntityNotFoundError(f"Sub-agent '{mandate.sub_agent_id}' not found in registry.")
+        if sub_agent.status == AgentStatus.QUARANTINED:
+            raise AgentQuarantinedError(
+                f"Delegated action blocked: sub-agent '{mandate.sub_agent_id}' is quarantined as rogue."
+            )
+
+        # 3. Check Human Principal Standing & Credits Pool
+        human = self.get_or_create_human(mandate.user_id)
+        if not human.is_active:
+            raise AuthorizationDeniedError(
+                f"Delegated action blocked: human principal '{mandate.user_id}' is inactive or banned."
+            )
+        if cost_credits > 0 and human.credits_balance < cost_credits:
+            raise InsufficientCreditsError(
+                f"Delegated action blocked: human principal '{mandate.user_id}' has insufficient spendable credits "
+                f"({cost_credits} required, {human.credits_balance} available)."
+            )
+
+        # 4. Watchdog Inspection on Sub-Agent
+        if self.watchdog is not None:
+            watchdog_verdict = self.watchdog.inspect_pre_call(
+                agent_id=mandate.sub_agent_id,
+                cost_credits=cost_credits,
+                current_time=now,
+            )
+            if not watchdog_verdict.action_permitted:
+                if watchdog_verdict.auto_quarantined:
+                    self.quarantine_agent(
+                        agent_id=mandate.sub_agent_id,
+                        reason=f"Watchdog auto-quarantine during delegated execution: {watchdog_verdict.reason}",
+                    )
+                    raise AgentQuarantinedError(
+                        f"Sub-agent '{mandate.sub_agent_id}' auto-quarantined: {watchdog_verdict.reason}"
+                    )
+                raise VelocityLimitExceededError(
+                    f"Sub-agent velocity limit exceeded: {watchdog_verdict.reason}"
+                )
+
+        # 5. Atomic Dual-Pool Deduction
+        # Deduct from mandate budget
+        self.mandate_manager.validate_and_consume(
+            mandate_id=mandate_id,
+            action=action,
+            cost_credits=cost_credits,
+            current_time=now,
+        )
+
+        # Deduct from human principal's credits pool
+        if cost_credits > 0:
+            deducted = self.storage.deduct_credits(user_id=mandate.user_id, amount=cost_credits)
+            if not deducted:
+                raise InsufficientCreditsError(
+                    f"Failed to deduct {cost_credits} credits from human principal '{mandate.user_id}'."
+                )
+
+        nonce = uuid.uuid4().hex[:16]
+        raw_preimage = f"{mandate.user_id}:{mandate.sub_agent_id}:{nonce}:{now:.4f}:True:{self.secret_key}"
+        signature = hashlib.sha256(raw_preimage.encode("utf-8")).hexdigest()
+
+        verdict = TrustVerdict(
+            authorized=True,
+            composite_score=sub_agent.trust_score * 1000.0,
+            human_score=human.social_credit,
+            agent_score=sub_agent.trust_score,
+            agent_status=sub_agent.status,
+            cost_deducted=cost_credits,
+            reasons=[f"Delegated action '{action}' authorized under mandate {mandate_id[:8]}."],
+            timestamp=now,
+            nonce=nonce,
+            expires_at=now + self.verdict_ttl_seconds,
+            signature=signature,
+        )
+
+        self.ledger.append(
+            event_type="DELEGATED_ACTION_EXECUTED",
+            entity_id=mandate.sub_agent_id,
+            payload={
+                "mandate_id": mandate_id,
+                "parent_agent_id": mandate.parent_agent_id,
+                "sub_agent_id": mandate.sub_agent_id,
+                "user_id": mandate.user_id,
+                "action": action,
+                "cost_deducted": cost_credits,
+                "remaining_mandate_credits": mandate.remaining_credits,
+            },
+        )
+
+        return verdict
+
+    def gate_delegated(
+        self,
+        action: Optional[str] = None,
+        cost_credits: int = 0,
+        auto_report_trespass: bool = True,
+    ) -> Callable[..., Any]:
+        """Decorator gating tool/function execution under an A2A delegation mandate.
+
+        Supports both synchronous and asynchronous callable targets.
+        Extracts `mandate_id` or `mandate` object from invocation arguments.
+        """
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            sig = inspect.signature(func)
+            action_name = action or func.__name__
+
+            if inspect.iscoroutinefunction(func):
+                @functools.wraps(func)
+                async def async_delegated_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    bound_args = sig.bind_partial(*args, **kwargs)
+                    bound_args.apply_defaults()
+                    mandate_arg = bound_args.arguments.get("mandate_id") or bound_args.arguments.get("mandate")
+                    if not mandate_arg:
+                        raise ValueError(f"Function {func.__name__} requires a 'mandate_id' or 'mandate' argument.")
+                    mandate_id = mandate_arg.mandate_id if hasattr(mandate_arg, "mandate_id") else str(mandate_arg)
+
+                    verdict = self.evaluate_delegated(
+                        mandate_id=mandate_id,
+                        action=action_name,
+                        cost_credits=cost_credits,
+                        auto_report_trespass=auto_report_trespass,
+                    )
+                    res = await func(*args, **kwargs)
+                    if self.watchdog is not None:
+                        mandate = self.mandate_manager.get_mandate(mandate_id)
+                        if mandate:
+                            self.watchdog.record_call_success(agent_id=mandate.sub_agent_id, cost_credits=cost_credits)
+                    return res
+                return async_delegated_wrapper
+            else:
+                @functools.wraps(func)
+                def sync_delegated_wrapper(*args: Any, **kwargs: Any) -> Any:
+                    bound_args = sig.bind_partial(*args, **kwargs)
+                    bound_args.apply_defaults()
+                    mandate_arg = bound_args.arguments.get("mandate_id") or bound_args.arguments.get("mandate")
+                    if not mandate_arg:
+                        raise ValueError(f"Function {func.__name__} requires a 'mandate_id' or 'mandate' argument.")
+                    mandate_id = mandate_arg.mandate_id if hasattr(mandate_arg, "mandate_id") else str(mandate_arg)
+
+                    verdict = self.evaluate_delegated(
+                        mandate_id=mandate_id,
+                        action=action_name,
+                        cost_credits=cost_credits,
+                        auto_report_trespass=auto_report_trespass,
+                    )
+                    res = func(*args, **kwargs)
+                    if self.watchdog is not None:
+                        mandate = self.mandate_manager.get_mandate(mandate_id)
+                        if mandate:
+                            self.watchdog.record_call_success(agent_id=mandate.sub_agent_id, cost_credits=cost_credits)
+                    return res
+                return sync_delegated_wrapper
+        return decorator
 
     @staticmethod
     def _raise_verdict_error(verdict: TrustVerdict) -> None:

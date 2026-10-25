@@ -61,3 +61,32 @@ class VelocityLimitExceededError(AuthorizationDeniedError):
 
 class AnomalyDetectedError(DualTrustError):
     """Raised when the automated security watchdog detects high-risk behavioral anomaly or runaway loop."""
+
+
+class DelegationError(DualTrustError):
+    """Base exception for all Agent-to-Agent (A2A) delegation and mandate failures."""
+
+
+class MandateExpiredError(DelegationError):
+    """Raised when an A2A delegation mandate token has exceeded its TTL."""
+
+
+class MandateScopeViolationError(DelegationError):
+    """Raised when a sub-agent attempts an action not authorized in its delegation mandate."""
+
+
+class MandateBudgetExceededError(DelegationError):
+    """Raised when a sub-agent attempts to spend more credits than authorized by its mandate."""
+
+
+class MandateDepthExceededError(DelegationError):
+    """Raised when sub-delegation depth exceeds the maximum allowed delegation hops (preventing infinite loops)."""
+
+
+class MandateRevokedError(DelegationError):
+    """Raised when an A2A delegation mandate has been revoked by the parent agent or human."""
+
+
+class HandshakeFailedError(DelegationError):
+    """Raised when mutual agent attestation or handshake fails due to quarantine, low trust, or anomaly."""
+

@@ -5,6 +5,7 @@ asymmetric exponential slashing, and rogue agent containment.
 """
 
 from dualtrust import adapters
+from dualtrust.a2a import MandateManager
 from dualtrust.adapters.mcp import DualTrustMCPGateway
 from dualtrust.crypto_ledger import AuditBlock, CryptographicLedger, MerkleTree
 from dualtrust.engine import DualTrust
@@ -13,12 +14,19 @@ from dualtrust.exceptions import (
     AnomalyDetectedError,
     AuthorizationDeniedError,
     ChallengeVerificationError,
+    DelegationError,
     DualTrustError,
     EntityNotFoundError,
+    HandshakeFailedError,
     HumanApprovalRequiredError,
     InsufficientAgentScoreError,
     InsufficientCreditsError,
     InsufficientHumanScoreError,
+    MandateBudgetExceededError,
+    MandateDepthExceededError,
+    MandateExpiredError,
+    MandateRevokedError,
+    MandateScopeViolationError,
     ProtocolTrespassError,
     VelocityLimitExceededError,
 )
@@ -30,12 +38,16 @@ from dualtrust.models import (
     AgentTelemetry,
     AnomalyType,
     ChallengeStatus,
+    DelegationMandate,
     EpisodicReflection,
+    HandshakeResult,
     HumanApprovalChallenge,
     HumanProfile,
     HumanTier,
+    MandateStatus,
     PreflightVerdict,
     RiskLevel,
+
     TrustVerdict,
     ViolationEvent,
     ViolationType,
@@ -44,11 +56,13 @@ from dualtrust.models import (
 from dualtrust.storage import MemoryStorage, SQLiteStorage, StorageBackend
 from dualtrust.watchdog import AgentWatchdog
 
-__version__ = "0.2.0"
+
+__version__ = "0.3.0"
 __all__ = [
     # Core Engine & Cryptographic Ledger
     "DualTrust",
     "DualTrustMCPGateway",
+    "MandateManager",
     "AgentWatchdog",
     "CryptographicLedger",
     "AuditBlock",
@@ -63,10 +77,14 @@ __all__ = [
     "AgentTelemetry",
     "AnomalyType",
     "ChallengeStatus",
+    "DelegationMandate",
     "EpisodicReflection",
+    "HandshakeResult",
     "HumanApprovalChallenge",
+
     "HumanProfile",
     "HumanTier",
+    "MandateStatus",
     "PreflightVerdict",
     "RiskLevel",
     "TrustVerdict",
@@ -90,4 +108,12 @@ __all__ = [
     "ProtocolTrespassError",
     "VelocityLimitExceededError",
     "AnomalyDetectedError",
+    "DelegationError",
+    "MandateExpiredError",
+    "MandateScopeViolationError",
+    "MandateBudgetExceededError",
+    "MandateDepthExceededError",
+    "MandateRevokedError",
+    "HandshakeFailedError",
 ]
+

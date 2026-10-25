@@ -87,5 +87,60 @@ class TestMicrosecondBenchmarks(unittest.TestCase):
         self.assertLess(p50, 100.0, f"Merkle verification p50 ({p50:.2f} us) breached 100 us SLA.")
 
 
+    def test_a2a_mandate_verification_latency(self) -> None:
+        """A2A cryptographic HMAC mandate verification must complete in under 50 us."""
+        mandate = self.dt.create_delegation_mandate(
+            parent_agent_id="perf_agent",
+            sub_agent_id="sub_perf_agent",
+            user_id="perf_user",
+            allowed_actions=["fast_action"],
+            max_credits=5000,
+            require_handshake=False,
+        )
+
+        iterations = 500
+        latencies_us = []
+        for _ in range(iterations):
+            t0 = time.perf_counter_ns()
+            is_valid, _ = self.dt.mandate_manager.verify_mandate(mandate, action="fast_action", cost_credits=1)
+            t1 = time.perf_counter_ns()
+            latencies_us.append((t1 - t0) / 1000.0)
+            self.assertTrue(is_valid)
+
+        latencies_us.sort()
+        p50 = latencies_us[int(0.50 * iterations)]
+        self.assertLess(p50, 50.0, f"A2A mandate verification p50 ({p50:.2f} us) breached 50 us SLA.")
+
+    def test_gate_delegated_overhead(self) -> None:
+        """The @gate_delegated decorator must introduce less than 150 us median latency."""
+        self.dt.register_agent("bench_sub_agent", initial_trust=0.88)
+        mandate = self.dt.create_delegation_mandate(
+            parent_agent_id="perf_agent",
+            sub_agent_id="bench_sub_agent",
+            user_id="perf_user",
+            allowed_actions=["bench_action"],
+            max_credits=100000,
+            require_handshake=False,
+        )
+
+        @self.dt.gate_delegated(action="bench_action", cost_credits=1)
+        def target_action(mandate_id: str) -> str:
+            return "ok"
+
+        iterations = 500
+        latencies_us = []
+        for _ in range(iterations):
+            t0 = time.perf_counter_ns()
+            res = target_action(mandate_id=mandate.mandate_id)
+            t1 = time.perf_counter_ns()
+            latencies_us.append((t1 - t0) / 1000.0)
+            self.assertEqual(res, "ok")
+
+        latencies_us.sort()
+        p50 = latencies_us[int(0.50 * iterations)]
+        self.assertLess(p50, 150.0, f"@gate_delegated overhead p50 ({p50:.2f} us) breached 150 us SLA.")
+
+
 if __name__ == "__main__":
     unittest.main()
+

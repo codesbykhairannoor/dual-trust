@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 
 class AgentStatus(str, Enum):
@@ -276,3 +276,92 @@ class WatchdogVerdict:
     auto_quarantined: bool = False
     reason: str = ""
     velocity_multiplier: float = 1.0
+
+
+class MandateStatus(str, Enum):
+    """Operational lifecycle status of an Agent-to-Agent delegation mandate."""
+
+    ACTIVE = "active"
+    EXHAUSTED = "exhausted"
+    EXPIRED = "expired"
+    REVOKED = "revoked"
+
+
+@dataclass
+class DelegationMandate:
+    """Cryptographically signed delegation ticket governing Agent-to-Agent sub-task execution."""
+
+    mandate_id: str
+    parent_agent_id: str
+    sub_agent_id: str
+    user_id: str
+    allowed_actions: List[str]
+    max_credits: int
+    credits_used: int = 0
+    max_depth: int = 1
+    current_depth: int = 1
+    created_at: float = field(default_factory=time.time)
+    expires_at: float = field(default_factory=lambda: time.time() + 300.0)
+    status: MandateStatus = MandateStatus.ACTIVE
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    signature: str = ""
+
+    def is_expired(self, current_time: Optional[float] = None) -> bool:
+        """Return True if the mandate has passed its expiration timestamp."""
+        now = current_time if current_time is not None else time.time()
+        return now > self.expires_at
+
+    @property
+    def remaining_credits(self) -> int:
+        """Return remaining unspent credits allotted under this mandate."""
+        return max(0, self.max_credits - self.credits_used)
+
+    def can_perform(self, action: str) -> bool:
+        """Verify whether an action falls within the mandate's authorized scope."""
+        if "*" in self.allowed_actions:
+            return True
+        return action in self.allowed_actions
+
+    def describe(self) -> str:
+        """Format a human-readable summary of the mandate."""
+        actions_str = ", ".join(self.allowed_actions)
+        return (
+            f"[Mandate {self.mandate_id[:8]}] Parent: '{self.parent_agent_id}' -> Sub: '{self.sub_agent_id}' "
+            f"for User: '{self.user_id}' | Actions: [{actions_str}] | Credits: {self.credits_used}/{self.max_credits} "
+            f"| Depth: {self.current_depth}/{self.max_depth} | Status: {self.status.value}"
+        )
+
+
+@dataclass(frozen=True)
+class HandshakeResult:
+    """Outcome of a bilateral mutual attestation and trust handshake between two autonomous agents."""
+
+    approved: bool
+    initiator_agent_id: str
+    target_agent_id: str
+    initiator_trust: float
+    target_trust: float
+    effective_clearance: str
+    recommended_max_credits: int
+    recommended_max_depth: int
+    handshake_token: str
+    reasons: List[str]
+    timestamp: float = field(default_factory=time.time)
+    expires_at: float = field(default_factory=lambda: time.time() + 60.0)
+
+    def is_expired(self, current_time: Optional[float] = None) -> bool:
+        """Check whether the handshake clearance window has elapsed."""
+        now = current_time if current_time is not None else time.time()
+        return now > self.expires_at
+
+    def describe(self) -> str:
+        """Produce a human-readable summary of the mutual handshake."""
+        status_str = "APPROVED" if self.approved else "REJECTED"
+        reasons_str = "; ".join(self.reasons) if self.reasons else "All bilateral checks passed."
+        return (
+            f"[Handshake {status_str}] '{self.initiator_agent_id}' ({self.initiator_trust:.2f}) <-> "
+            f"'{self.target_agent_id}' ({self.target_trust:.2f}) | Clearance: {self.effective_clearance} | "
+            f"Max Credits: {self.recommended_max_credits} | Max Depth: {self.recommended_max_depth} - {reasons_str}"
+        )
+
+
