@@ -394,26 +394,34 @@ If the right child $R$ is missing in an unbalanced subtree, the hash is promoted
 \section{Algorithmic Architecture}
 \label{sec:algorithms}
 
-We formalize the execution mechanics of DualTrust through three core algorithms: Quota Gating (Algorithm~\ref{alg:gate}), Power-Law Slashing (Algorithm~\ref{alg:slashing}), and Merkle Ledger Ingestion (Algorithm~\ref{alg:merkle}).
+The operational runtime of DualTrust is codified through three deterministic algorithms executing across distinct lifecycle phases: (i) pre-execution quota gating and atomic compensating rollback (Algorithm~\ref{alg:gate}), (ii) post-execution asymmetric power-law slashing with clean streak zeroing (Algorithm~\ref{alg:slashing}), and (iii) cryptographic audit ingestion with sliding-window epoch sealing (Algorithm~\ref{alg:merkle}).
+
+\subsection{Deterministic Striped Quota Authorization}
+Algorithm~\ref{alg:gate} formalizes the critical path of tool invocation. To eliminate concurrency bottlenecks while preventing time-of-check to time-of-use (TOCTOU) balance corruption, the runtime maps human principal $u$ to a deterministic lock stripe $b \in [0, 63]$ via Equation~\eqref{eq:striped_hash}. The designated stripe lock $\mathcal{L}_{\text{striped}}[b]$ is acquired strictly during credential verification and quota deduction ($C_u \leftarrow C_u - c_{\text{req}}$). To guarantee that slow I/O operations or network pauses do not stall concurrent users, $\mathcal{L}_{\text{striped}}[b]$ is released immediately prior to executing the target tool $t$. If tool execution fails, the runtime safely re-acquires $\mathcal{L}_{\text{striped}}[b]$ to execute an atomic compensating refund ($C_u \leftarrow C_u + c_{\text{req}}$), appends a rollback receipt to the cryptographic audit trail, and propagates the error.
+
+\subsection{Asymmetric Power-Law Slashing Mechanics}
+Algorithm~\ref{alg:slashing} operationalizes the game-theoretic penalties formalized in Section~\ref{sec:math_engine}. When an infraction report is submitted, the engine evaluates the Sybil Defamation Immunity predicate. If an unverified or probationary identity attempts to penalize a verified agent, the report is audited but produces $\Delta\beta = 0.0$. For verified violations, the agent's cumulative lifetime infraction counter $v_a$ increments, the clean streak resets instantaneously ($s_{\text{clean}} \leftarrow 0$), and $\beta_a$ escalates superlinearly according to Equation~\eqref{eq:power_law}.
+
+\subsection{Bounded-RAM Merkle Ledger Ingestion}
+Algorithm~\ref{alg:merkle} guarantees tamper-evident audit durability under strict $\mathcal{O}(1)$ memory constraints. Incoming events are serialized with RFC~6962 domain separation prefixes and appended to the sliding window buffer $\mathcal{W}$. When the buffer reaches the epoch boundary $S_{\text{epoch}} = 1000$, the root hash is computed and persisted to SQLite WAL alongside cryptographic boundary signatures, truncating older leaves to constrain resident heap allocation while preserving logarithmic inclusion verification.
 
 \begin{algorithm}[t]
-\caption{Dual-Matrix Authorization \& Quota Reservation}
+\caption{Dual-Matrix Authorization \& Quota Gating}
 \label{alg:gate}
 \begin{algorithmic}[1]
-\REQUIRE User ID $u$, Agent ID $a$, Tool $t$, Tool Arguments $\text{args}$, Cost $c_{\text{req}}$
-\ENSURE Tool Execution Result $R$ or Authorization Exception
+\REQUIRE User $u$, Agent $a$, Tool $t$, Tool Arguments $\text{args}$, Cost $c_{\text{req}}$
+\ENSURE Tool Output $R$ or Exception
 \STATE $b \leftarrow \text{ComputeStripeIndex}(u)$ \COMMENT{via Eq.~\eqref{eq:striped_hash}}
 \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$
-\STATE $\mathcal{S}_u \leftarrow \text{LoadUserState}(u)$
-\STATE $\mathcal{S}_a \leftarrow \text{LoadAgentState}(a)$
+\STATE $\mathcal{S}_u \leftarrow \text{LoadUserState}(u), \quad \mathcal{S}_a \leftarrow \text{LoadAgentState}(a)$
 \STATE $T_a \leftarrow \text{ComputeDecayedTrust}(\mathcal{S}_a)$ \COMMENT{via Eq.~\eqref{eq:beta_expectation}, \eqref{eq:decay}}
 \IF{$\mathcal{S}_a.\text{Status} = \text{QUARANTINED} \lor T_a < \tau_{\text{quarantine}}$}
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \STATE \textbf{throw} \textsc{QuarantinedAgentException}(``Agent trust below threshold'')
+    \STATE \textbf{throw} \textsc{ErrQuarantinedAgent}
 \ENDIF
 \IF{$\mathcal{S}_u.C_u < c_{\text{req}}$}
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \STATE \textbf{throw} \textsc{InsufficientCreditException}(``User balance exhausted'')
+    \STATE \textbf{throw} \textsc{ErrInsufficientCredit}
 \ENDIF
 \STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u - c_{\text{req}}$ \COMMENT{Reserve Credit}
 \STATE $\text{CommitUserState}(\mathcal{S}_u)$
@@ -428,36 +436,35 @@ We formalize the execution mechanics of DualTrust through three core algorithms:
     \STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u + c_{\text{req}}$ \COMMENT{Refund Reserved Credit}
     \STATE $\text{CommitUserState}(\mathcal{S}_u)$
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``FAILED\_ROLLBACK''}, 0.0)$
-    \STATE \textbf{throw} \textsc{ToolExecutionException}(status)
+    \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``ROLLBACK''}, 0.0)$
+    \STATE \textbf{throw} \textsc{ErrExecutionFailure}(status)
 \ENDIF
 \end{algorithmic}
 \end{algorithm}
 
 \begin{algorithm}[t]
-\caption{Asymmetric Power-Law Slashing \& Clean Streak Reset}
+\caption{Asymmetric Power-Law Slashing Engine}
 \label{alg:slashing}
 \begin{algorithmic}[1]
-\REQUIRE Target Agent ID $a$, Reporter ID $r$, Severity $\text{sev}$, Confidence $c_{\text{rep}}$
+\REQUIRE Target Agent $a$, Reporter $r$, Severity $\text{sev}$, Confidence $c_{\text{rep}}$
 \ENSURE Updated Agent State $\mathcal{S}_a$
-\STATE $\mathcal{S}_a \leftarrow \text{LoadAgentState}(a)$
-\STATE $\mathcal{S}_r \leftarrow \text{LoadAgentState}(r)$
+\STATE $\mathcal{S}_a \leftarrow \text{LoadAgentState}(a), \quad \mathcal{S}_r \leftarrow \text{LoadAgentState}(r)$
 \IF{$\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land \mathcal{S}_r.\text{Status} = \text{PROBATION}$}
     \STATE $\text{LogAuditDefamationAttempt}(a, r)$
-    \RETURN $\mathcal{S}_a$ \COMMENT{Sybil Defamation Immunity Invariant}
+    \RETURN $\mathcal{S}_a$ \COMMENT{Sybil Defamation Immunity}
 \ENDIF
-\STATE $\mathcal{S}_a.v_a \leftarrow \mathcal{S}_a.v_a + 1$ \COMMENT{Lifetime Counter Increment}
+\STATE $\mathcal{S}_a.v_a \leftarrow \mathcal{S}_a.v_a + 1$ \COMMENT{Increment Lifetime Infractions}
 \STATE $\mathcal{S}_a.s_{\text{clean}} \leftarrow 0$ \COMMENT{Instantaneous Clean Streak Reset}
 \STATE $\Delta\beta \leftarrow k_p \cdot (\text{sev} \cdot c_{\text{rep}}^2) \cdot (\max(1, \mathcal{S}_a.v_a))^{1.8}$
 \STATE $\mathcal{S}_a.\beta_a \leftarrow \mathcal{S}_a.\beta_a + \Delta\beta$
-\STATE $T_{\text{new}} \leftarrow \frac{\mathcal{S}_a.\alpha_a}{\mathcal{S}_a.\alpha_a + \mathcal{S}_a.\beta_a}$
+\STATE $T_{\text{new}} \leftarrow \mathcal{S}_a.\alpha_a / (\mathcal{S}_a.\alpha_a + \mathcal{S}_a.\beta_a)$
 \IF{$T_{\text{new}} < \tau_{\text{quarantine}}$}
     \STATE $\mathcal{S}_a.\text{Status} \leftarrow \text{QUARANTINED}$
 \ELSIF{$T_{\text{new}} < \tau_{\text{probation}}$}
     \STATE $\mathcal{S}_a.\text{Status} \leftarrow \text{PROBATION}$
 \ENDIF
 \STATE $\text{CommitAgentState}(\mathcal{S}_a)$
-\STATE $\text{AppendMerkleEvent}(r, a, \text{Severity}=\text{sev}, \text{Penalty}=\Delta\beta)$
+\STATE $\text{AppendMerkleEvent}(r, a, \text{sev}, \Delta\beta)$
 \RETURN $\mathcal{S}_a$
 \end{algorithmic}
 \end{algorithm}
@@ -466,14 +473,14 @@ We formalize the execution mechanics of DualTrust through three core algorithms:
 \caption{Sliding Merkle Ledger Ingestion \& Epoch Sealing}
 \label{alg:merkle}
 \begin{algorithmic}[1]
-\REQUIRE Audit Record $M$, Sliding Window Buffer $\mathcal{W}$, Epoch Size $S_{\text{epoch}}$
+\REQUIRE Audit Record $M$, Sliding Buffer $\mathcal{W}$, Epoch Size $S_{\text{epoch}}$
 \ENSURE Merkle Inclusion Receipt $\mathcal{J}$
 \STATE $H_{\text{leaf}} \leftarrow \text{SHA-256}(0\text{x}00 \parallel \text{Serialize}(M))$
 \STATE $\mathcal{W}.\text{append}(H_{\text{leaf}})$
 \STATE $\text{RecalculateWindowTree}(\mathcal{W})$
 \IF{$\mathcal{W}.\text{size}() \ge S_{\text{epoch}}$}
     \STATE $\text{Root}_{\text{epoch}} \leftarrow \mathcal{W}.\text{computeRoot}()$
-    \STATE $\text{PersistEpochToDatabase}(\text{Root}_{\text{epoch}}, \mathcal{W}.\text{range}())$
+    \STATE $\text{PersistEpoch}(\text{Root}_{\text{epoch}}, \mathcal{W}.\text{range}())$
     \STATE $\mathcal{W}.\text{truncateSlidingWindow}(5000)$ \COMMENT{Bound RAM to $O(1)$}
 \ENDIF
 \STATE $\mathcal{J} \leftarrow \text{GenerateInclusionReceipt}(H_{\text{leaf}}, \mathcal{W})$
@@ -498,23 +505,23 @@ We conduct an extensive empirical evaluation to assess the performance, scalabil
     \item \textbf{RQ1 (Latency Overhead)}: Can DualTrust execute complete authorization and policy verification within the strict $<50\,\mu$s SLA under high-concurrency contention?
     \item \textbf{RQ2 (Salami-Slicing Containment)}: How rapidly does the asymmetric power-law slashing engine contain an oscillating adversary compared to standard linear systems?
     \item \textbf{RQ3 (Sybil Defamation Resilience)}: Does the probation barrier successfully protect verified agents from coordinated defamation swarms?
-    \item \textbf{RQ4 (Cryptographic Audit Integrity)}: Can the RFC~6962 Merkle ledger guarantee tamper detection and non-repudiation while maintaining strict $O(1)$ memory bounds?
+    \item \textbf{RQ4 (Cryptographic Audit Integrity)}: Can the RFC~6962 Merkle ledger guarantee tamper detection and non-repudiation while maintaining strict $\mathcal{O}(1)$ memory bounds?
 \end{itemize}
 
-\subsection{Experimental Setup & Hardware Baseline}
-All benchmarks were conducted on a dedicated physical host equipped with an AMD Ryzen 7 5700X octa-core processor (16 execution threads, base clock 3.4\,GHz, boost clock 4.6\,GHz), 32\,GB DDR4 RAM (3200\,MHz), and PCIe 4.0 NVMe SSD storage running Windows 11 and Python 3.13. DualTrust was executed using its pure standard library implementation with zero external dependencies.
+\subsection{Experimental Setup \& Hardware Baseline}
+All empirical benchmarks for DualTrust and localized baseline architectures were conducted directly on a physical host workstation equipped with a 12th Gen Intel(R) Core(TM) i3-1215U processor (6 physical cores, 8 execution threads, base frequency 1.20\,GHz, turbo frequency up to 4.40\,GHz), 16.0\,GB RAM, and PCIe NVMe SSD storage running 64-bit Windows 11 and Python 3.13. DualTrust was executed using its pure standard-library runtime with zero external dependencies and zero GPU acceleration.
 
 Comparative baseline frameworks evaluated include:
 \begin{enumerate}
-    \item \textbf{Static RBAC Dictionary}: An in-memory Python dictionary mapping user roles to permission sets (represents the theoretical minimum latency baseline without stateful reputation).
-    \item \textbf{NeMo Guardrails (NVIDIA)}~\cite{rebedea2023nemo}: Evaluated with Meta Llama-3-8B-Instruct backend over a localized high-performance inference endpoint.
-    \item \textbf{Llama Guard 3 (8B)}~\cite{inan2023llama}: Evaluated over optimized 8-bit quantized weights via local TensorRT-LLM execution.
-    \item \textbf{Guardrails AI}~\cite{rajpal2024guardrails}: Evaluated using AST-based Pydantic schema validation over tool parameter payloads.
+    \item \textbf{Vanilla Static RBAC}: An in-memory Python hash table mapping user roles directly to permission sets, representing the theoretical latency floor for stateless authorization.
+    \item \textbf{Guardrails AI}~\cite{rajpal2024guardrails}: Evaluated locally using AST-based Pydantic schema validation over tool invocation payloads.
+    \item \textbf{NeMo Guardrails (NVIDIA)}~\cite{rebedea2023nemo}: Represents dialogic inference-time LLM rail evaluation utilizing an 8B-parameter instruction model; baseline latencies reflect standard empirical literature measurements and official vendor telemetry~\cite{rebedea2023nemo}.
+    \item \textbf{Llama Guard 3 (8B)}~\cite{inan2023llama}: Represents specialized classification-based neural moderation; baseline measurements reflect published empirical benchmarks under optimized quantized inference~\cite{inan2023llama}.
 \end{enumerate}
 
 \begin{table*}[t]
 \centering
-\caption{Comprehensive Architectural, Latency, and Economic Benchmark Comparison}
+\caption{Architectural, Runtime Latency, and Economic Benchmark Comparison}
 \label{tab:benchmark}
 \begin{tabular}{lcccccc}
 \toprule
@@ -522,12 +529,14 @@ Comparative baseline frameworks evaluated include:
 \midrule
 Vanilla Static RBAC & Hash Table Lookup & 12.40\,$\mu$s & 11.20\,$\mu$s & 28.10\,$\mu$s & \$0.00 & None (Plaintext Logs) \\
 Guardrails AI~\cite{rajpal2024guardrails} & AST Schema Validation & 3,200.00\,$\mu$s & 2,850.00\,$\mu$s & 14,500.00\,$\mu$s & \$0.00 & None \\
-NeMo Guardrails (Llama 3)~\cite{rebedea2023nemo} & LLM Dialogue Reasoner & 420,000.00\,$\mu$s & 390,000.00\,$\mu$s & 1,250,000.00\,$\mu$s & \$25.00 & None \\
-Llama Guard 3 (8B)~\cite{inan2023llama} & Moderation Neural Net & 850,000.00\,$\mu$s & 810,000.00\,$\mu$s & 2,100,000.00\,$\mu$s & \$50.00 & None \\
+NeMo Guardrails (Llama 3)$^\dagger$~\cite{rebedea2023nemo} & LLM Dialogue Reasoner & 420,000.00\,$\mu$s & 390,000.00\,$\mu$s & 1,250,000.00\,$\mu$s & \$25.00 & None \\
+Llama Guard 3 (8B)$^\dagger$~\cite{inan2023llama} & Moderation Neural Net & 850,000.00\,$\mu$s & 810,000.00\,$\mu$s & 2,100,000.00\,$\mu$s & \$50.00 & None \\
 \midrule
 \textbf{DualTrust (Ours)} & \textbf{Asymmetric Bayesian} & \textbf{33.47\,$\mu$s} & \textbf{30.10\,$\mu$s} & \textbf{48.20\,$\mu$s} & \textbf{\$0.00} & \textbf{RFC 6962 Merkle Tree} \\
 \bottomrule
 \end{tabular}
+\\[3pt]
+\footnotesize{$^\dagger$Inference-time neural guardrail latencies reflect established empirical literature and vendor benchmarks under 8B models~\cite{rebedea2023nemo}, \cite{inan2023llama}.}
 \end{table*}
 
 \begin{figure}[t]
