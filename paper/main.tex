@@ -28,8 +28,9 @@
 
 \title{DualTrust: An Ultra-Low-Latency Asymmetric Bayesian Governance Framework for Resilient Autonomous Agent Containment in Cyber-Physical Systems}
 
-\author{DualTrust Research Consortium%
-\thanks{Manuscript received October 27, 2026; revised January 15, 2027. This research was supported in part by the Open-Source Autonomous Intelligence Security Initiative. Complete source code, automated test harnesses, and microsecond benchmark suites are publicly archived at: \url{https://github.com/codesbykhairannoor/dual-trust}.}}
+\author{Khairan Noor Fadhlillah%
+\thanks{K. N. Fadhlillah is with the Department of Computer Science, Universitas Ary Ginanjar, Jakarta 12560, Indonesia (e-mail: dev@Khairan.tech).}%
+\thanks{Manuscript submitted October 27, 2026 for review. Complete source code, automated test harnesses, and microsecond benchmark suites are publicly archived at: \url{https://github.com/codesbykhairannoor/dual-trust}. DualTrust is distributed via PyPI at: \url{https://pypi.org/project/dualtrust/}.}}
 
 \markboth{IEEE Transactions on Dependable and Secure Computing,~Vol.~XX, No.~XX, 2026}%
 {DualTrust: Ultra-Low-Latency Asymmetric Bayesian Governance}
@@ -408,28 +409,28 @@ We formalize the execution mechanics of DualTrust through three core algorithms:
 \STATE $T_a \leftarrow \text{ComputeDecayedTrust}(\mathcal{S}_a)$ \COMMENT{via Eq.~\eqref{eq:beta_expectation}, \eqref{eq:decay}}
 \IF{$\mathcal{S}_a.\text{Status} = \text{QUARANTINED} \lor T_a < \tau_{\text{quarantine}}$}
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \RAISE \textsc{QuarantinedAgentException}(``Agent trust below threshold'')
+    \STATE \textbf{throw} \textsc{QuarantinedAgentException}(``Agent trust below threshold'')
 \ENDIF
 \IF{$\mathcal{S}_u.C_u < c_{\text{req}}$}
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \RAISE \textsc{InsufficientCreditException}(``User balance exhausted'')
+    \STATE \textbf{throw} \textsc{InsufficientCreditException}(``User balance exhausted'')
 \ENDIF
 \STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u - c_{\text{req}}$ \COMMENT{Reserve Credit}
 \STATE $\text{CommitUserState}(\mathcal{S}_u)$
 \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-\TRY
-    \STATE $R \leftarrow \text{ExecuteTargetTool}(t, \text{args})$
+\STATE $(R, \text{status}) \leftarrow \text{ExecuteTargetTool}(t, \text{args})$
+\IF{$\text{status} = \text{SUCCESS}$}
     \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``SUCCESS''}, c_{\text{req}})$
     \RETURN $R$
-\EXCEPT \textsc{Exception} \textbf{as} $E$
+\ELSE
     \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$ \COMMENT{Atomic Rollback}
     \STATE $\mathcal{S}_u \leftarrow \text{LoadUserState}(u)$
     \STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u + c_{\text{req}}$ \COMMENT{Refund Reserved Credit}
     \STATE $\text{CommitUserState}(\mathcal{S}_u)$
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
     \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``FAILED\_ROLLBACK''}, 0.0)$
-    \RAISE $E$
-\ENDTRY
+    \STATE \textbf{throw} \textsc{ToolExecutionException}(status)
+\ENDIF
 \end{algorithmic}
 \end{algorithm}
 
