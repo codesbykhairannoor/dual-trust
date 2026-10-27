@@ -390,108 +390,81 @@ If the right child $R$ is missing in an unbalanced subtree, the hash is promoted
 \item Composite inclusion proofs for historical blocks are constructed by combining the historical epoch proof with the active window proof, achieving $O(1)$ memory consumption while preserving logarithmic $\mathcal{O}(\log N)$ verification complexity~\cite{melara2015coniks}.
 \end{enumerate}
 
-\section{Algorithmic Architecture}
+\section{Runtime Architecture \& Algorithmic Protocols}
 \label{sec:algorithms}
 
-The operational runtime of DualTrust is codified through three deterministic algorithms executing across distinct lifecycle phases: (i) pre-execution quota gating and atomic compensating rollback (Algorithm~\ref{alg:gate}), (ii) post-execution asymmetric power-law slashing with clean streak zeroing (Algorithm~\ref{alg:slashing}), and (iii) cryptographic audit ingestion with sliding-window epoch sealing (Algorithm~\ref{alg:merkle}).
+The operational runtime of DualTrust enforces safety through two complementary mechanisms: (i) an ultra-low-latency concurrency control and atomic rollback protocol (formalized in Algorithm~\ref{alg:gate}), and (ii) a deterministic behavioral state transition engine with Sybil-resistant power-law slashing (formalized in Table~\ref{tab:state_transitions}). Storage persistence and audit durability are guaranteed via RFC~6962 sliding-window epoch sealing.
 
 \subsection{Deterministic Striped Quota Authorization}
-Algorithm~\ref{alg:gate} formalizes the critical path of tool invocation. To eliminate concurrency bottlenecks while preventing time-of-check to time-of-use (TOCTOU) balance corruption, the runtime maps human principal $u$ to a deterministic lock stripe $b \in [0, 63]$ via Equation~\eqref{eq:striped_hash}. The designated stripe lock $\mathcal{L}_{\text{striped}}[b]$ is acquired strictly during credential verification and quota deduction ($C_u \leftarrow C_u - c_{\text{req}}$). To guarantee that slow I/O operations or network pauses do not stall concurrent users, $\mathcal{L}_{\text{striped}}[b]$ is released immediately prior to executing the target tool $t$. If tool execution fails, the runtime safely re-acquires $\mathcal{L}_{\text{striped}}[b]$ to execute an atomic compensating refund ($C_u \leftarrow C_u + c_{\text{req}}$), appends a rollback receipt to the cryptographic audit trail, and propagates the error.
+Algorithm~\ref{alg:gate} formalizes the critical path of tool invocation. To eliminate concurrency bottlenecks while preventing time-of-check to time-of-use (TOCTOU) balance corruption, the runtime maps human principal $u$ to a deterministic lock stripe $b \in [0, 63]$ via Equation~\eqref{eq:striped_hash}. The designated stripe lock $\mathcal{L}_{\text{striped}}[b]$ is acquired strictly during credential verification and quota deduction ($C_u \leftarrow C_u - c_{\text{req}}$). 
 
-\subsection{Asymmetric Power-Law Slashing Mechanics}
-Algorithm~\ref{alg:slashing} operationalizes the game-theoretic penalties formalized in Section~\ref{sec:math_engine}. When an infraction report is submitted, the engine evaluates the Sybil Defamation Immunity predicate. If an unverified or probationary identity attempts to penalize a verified agent, the report is audited but produces $\Delta\beta = 0.0$. For verified violations, the agent's cumulative lifetime infraction counter $v_a$ increments, the clean streak resets instantaneously ($s_{\text{clean}} \leftarrow 0$), and $\beta_a$ escalates superlinearly according to Equation~\eqref{eq:power_law}.
-
-\subsection{Bounded-RAM Merkle Ledger Ingestion}
-Algorithm~\ref{alg:merkle} guarantees tamper-evident audit durability under strict $\mathcal{O}(1)$ memory constraints. Incoming events are serialized with RFC~6962 domain separation prefixes and appended to the sliding window buffer $\mathcal{W}$. When the buffer reaches the epoch boundary $S_{\text{epoch}} = 1000$, the root hash is computed and persisted to SQLite WAL alongside cryptographic boundary signatures, truncating older leaves to constrain resident heap allocation while preserving logarithmic inclusion verification.
+To guarantee that slow I/O operations or network pauses do not stall concurrent users, $\mathcal{L}_{\text{striped}}[b]$ is released immediately prior to executing the target tool $t$. If tool execution fails, the runtime safely re-acquires $\mathcal{L}_{\text{striped}}[b]$ to execute an atomic compensating refund ($C_u \leftarrow C_u + c_{\text{req}}$), appends a rollback receipt to the cryptographic audit trail, and propagates the error.
 
 \begin{algorithm}[!t]
-\caption{Dual-Matrix Authorization \& Quota Gating}
+\caption{Striped Authorization \& Compensating Rollback}
 \label{alg:gate}
 \footnotesize
-\raggedright
 \begin{algorithmic}[1]
-\REQUIRE Principal $u$, Agent $a$, Tool $t$, Args $\text{args}$, Cost $c_{\text{req}}$
+\REQUIRE Principal $u$, Agent $a$, Tool $t$, Arguments $\text{args}$, Cost $c_{\text{req}}$
 \ENSURE Tool Output $R$ or Exception
-\STATE $b \leftarrow \text{ComputeStripeIndex}(u)$ \COMMENT{via Eq.~\eqref{eq:striped_hash}}
+\STATE $b \leftarrow \text{SHA-256}(\text{UTF8}(u))[0..3] \pmod{64}$ \hfill \COMMENT{Stripe Index}
 \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$
-\STATE $\mathcal{S}_u \leftarrow \text{LoadUser}(u), \; \mathcal{S}_a \leftarrow \text{LoadAgent}(a)$
-\STATE $T_a \leftarrow \text{ComputeDecayedTrust}(\mathcal{S}_a)$ \COMMENT{via Eq.~\eqref{eq:beta_expectation}, \eqref{eq:decay}}
-\IF{$\mathcal{S}_a.\text{Status} = \text{QUARANTINED} \lor T_a < \tau_{\text{quarantine}}$}
-    \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \STATE \textbf{throw} \textsc{ErrQuarantinedAgent}
+\STATE $\langle C_u, \mathcal{R}_u \rangle \leftarrow \text{LoadPrincipalState}(u)$
+\STATE $T_a \leftarrow \text{ComputeDecayedTrust}(a)$
+\IF{$\text{Status}(a) = \text{QUARANTINED} \lor T_a < \tau_{\text{quarantine}}$}
+    \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$; \textbf{throw} \textsc{ErrQuarantinedAgent}
 \ENDIF
-\IF{$\mathcal{S}_u.C_u < c_{\text{req}}$}
-    \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \STATE \textbf{throw} \textsc{ErrInsufficientCredit}
+\IF{$C_u < c_{\text{req}}$}
+    \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$; \textbf{throw} \textsc{ErrInsufficientCredit}
 \ENDIF
-\STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u - c_{\text{req}}$ \COMMENT{Reserve Credit}
-\STATE $\text{CommitUserState}(\mathcal{S}_u)$
-\STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-\STATE $(R, \text{status}) \leftarrow \text{ExecuteTargetTool}(t, \text{args})$
-\IF{$\text{status} = \text{SUCCESS}$}
+\STATE $C_u \leftarrow C_u - c_{\text{req}}$ \hfill \COMMENT{Atomically Reserve Credit}
+\STATE $\text{CommitPrincipalState}(u, C_u)$
+\STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$ \hfill \COMMENT{Unlock Before Tool I/O}
+\STATE $(R, \text{err}) \leftarrow \text{ExecuteTargetTool}(t, \text{args})$
+\IF{$\text{err} = \varnothing$}
     \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``SUCCESS''}, c_{\text{req}})$
     \RETURN $R$
 \ELSE
-    \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$ \COMMENT{Atomic Rollback}
-    \STATE $\mathcal{S}_u \leftarrow \text{LoadUserState}(u)$
-    \STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u + c_{\text{req}}$ \COMMENT{Refund Reserved Credit}
-    \STATE $\text{CommitUserState}(\mathcal{S}_u)$
+    \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$ \hfill \COMMENT{Atomic Compensating Rollback}
+    \STATE $C_u \leftarrow C_u + c_{\text{req}}$ \hfill \COMMENT{Refund Reserved Quota}
+    \STATE $\text{CommitPrincipalState}(u, C_u)$
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
     \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``ROLLBACK''}, 0.0)$
-    \STATE \textbf{throw} \textsc{ErrExecutionFailure}(status)
+    \STATE \textbf{throw} \textsc{ErrToolExecutionFailure}(\text{err})
 \ENDIF
 \end{algorithmic}
 \end{algorithm}
 
-\begin{algorithm}[!t]
-\caption{Asymmetric Power-Law Slashing Engine}
-\label{alg:slashing}
-\footnotesize
-\raggedright
-\begin{algorithmic}[1]
-\REQUIRE Target $a$, Reporter $r$, Severity $\text{sev}$, Confidence $c_{\text{rep}}$
-\ENSURE Updated Agent State $\mathcal{S}_a$
-\STATE $\mathcal{S}_a \leftarrow \text{LoadAgent}(a), \; \mathcal{S}_r \leftarrow \text{LoadAgent}(r)$
-\IF{$\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land \mathcal{S}_r.\text{Status} = \text{PROBATION}$}
-    \STATE $\text{LogAuditDefamationAttempt}(a, r)$
-    \RETURN $\mathcal{S}_a$ \COMMENT{Sybil Defamation Immunity}
-\ENDIF
-\STATE $\mathcal{S}_a.v_a \leftarrow \mathcal{S}_a.v_a + 1$ \COMMENT{Increment Lifetime Infractions}
-\STATE $\mathcal{S}_a.s_{\text{clean}} \leftarrow 0$ \COMMENT{Instantaneous Clean Streak Reset}
-\STATE $\Delta\beta \leftarrow k_p \cdot (\text{sev} \cdot c_{\text{rep}}^2) \cdot (\max(1, \mathcal{S}_a.v_a))^{1.8}$
-\STATE $\mathcal{S}_a.\beta_a \leftarrow \mathcal{S}_a.\beta_a + \Delta\beta$
-\STATE $T_{\text{new}} \leftarrow \mathcal{S}_a.\alpha_a / (\mathcal{S}_a.\alpha_a + \mathcal{S}_a.\beta_a)$
-\IF{$T_{\text{new}} < \tau_{\text{quarantine}}$}
-    \STATE $\mathcal{S}_a.\text{Status} \leftarrow \text{QUARANTINED}$
-\ELSIF{$T_{\text{new}} < \tau_{\text{probation}}$}
-    \STATE $\mathcal{S}_a.\text{Status} \leftarrow \text{PROBATION}$
-\ENDIF
-\STATE $\text{CommitAgentState}(\mathcal{S}_a)$
-\STATE $\text{AppendMerkleEvent}(r, a, \text{sev}, \Delta\beta)$
-\RETURN $\mathcal{S}_a$
-\end{algorithmic}
-\end{algorithm}
+\subsection{Behavioral State Machine \& Slashing Transitions}
+Rather than relying on ad-hoc heuristic filters, agent lifecycle dynamics are governed by a deterministic finite state machine (FSM) over the state space $\mathcal{S}_{\text{status}} = \{\text{PROBATION}, \text{ACTIVE}, \text{VERIFIED}, \text{QUARANTINED}\}$, summarized in Table~\ref{tab:state_transitions}.
 
-\begin{algorithm}[!t]
-\caption{Sliding Merkle Ledger Ingestion \& Epoch Sealing}
-\label{alg:merkle}
+When an infraction report is submitted, the engine evaluates the Sybil Defamation Immunity predicate. If an unverified or probationary identity attempts to penalize a verified agent, the report is audited but produces $\Delta\beta \equiv 0.0$. For verified violations, the agent's cumulative lifetime infraction counter $v_a$ increments, the clean streak resets instantaneously ($s_{\text{clean}} \leftarrow 0$), and $\beta_a$ escalates superlinearly according to Equation~\eqref{eq:power_law}.
+
+\begin{table}[!t]
+\centering
+\caption{Agent Behavioral State Transition Matrix}
+\label{tab:state_transitions}
 \footnotesize
-\raggedright
-\begin{algorithmic}[1]
-\REQUIRE Record $M$, Sliding Buffer $\mathcal{W}$, Epoch Size $S_{\text{epoch}}$
-\ENSURE Merkle Inclusion Receipt $\mathcal{J}$
-\STATE $H_{\text{leaf}} \leftarrow \text{SHA-256}(0\text{x}00 \parallel \text{Serialize}(M))$
-\STATE $\mathcal{W}.\text{append}(H_{\text{leaf}})$
-\STATE $\text{RecalculateWindowTree}(\mathcal{W})$
-\IF{$\mathcal{W}.\text{size}() \ge S_{\text{epoch}}$}
-    \STATE $\text{Root}_{\text{epoch}} \leftarrow \mathcal{W}.\text{computeRoot}()$
-    \STATE $\text{PersistEpoch}(\text{Root}_{\text{epoch}}, \mathcal{W}.\text{range}())$
-    \STATE $\mathcal{W}.\text{truncateSlidingWindow}(5000)$ \COMMENT{Bound RAM to $O(1)$}
-\ENDIF
-\STATE $\mathcal{J} \leftarrow \text{GenerateInclusionReceipt}(H_{\text{leaf}}, \mathcal{W})$
-\RETURN $\mathcal{J}$
-\end{algorithmic}
-\end{algorithm}
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabular*}{\columnwidth}{@{\extracolsep{\fill}}lllc@{}}
+\toprule
+\textbf{Current State} & \textbf{Trigger \& Condition} & \textbf{Reputation Update} & \textbf{Next State} \\
+\midrule
+\textsc{Probation} & Benign Action ($c \ge 0.50$) & $\Delta\alpha = k_r \cdot c, \, s_{\text{clean}} \uparrow$ & \textsc{Active} \\
+\textsc{Active} & Clean Streak $\ge 100$ ($T_a \ge 0.90$) & $\Delta\alpha = 2k_r \cdot c, \, s_{\text{clean}} \uparrow$ & \textsc{Verified} \\
+\textsc{Verified} & Sybil Defamation ($r \in \textsc{Prob}$) & $\Delta\beta \equiv 0.0$ (Immunized) & \textsc{Verified} \\
+\textsc{Active/Ver.} & Policy Infraction ($\text{sev} > 0$) & $\Delta\beta = \text{Eq.~\eqref{eq:power_law}}, \, s_{\text{clean}} \leftarrow 0$ & \textsc{Probation} \\
+Any State & Severe Infraction ($T_{\text{new}} < \tau_q$) & Immediate Revocation & \textsc{Quarantined} \\
+\bottomrule
+\end{tabular*}
+\end{table}
+
+\subsection{Sliding Merkle Ingestion \& Epoch Sealing}
+Cryptographic audit ingestion guarantees tamper-evident durability under strict $\mathcal{O}(1)$ memory constraints. Incoming events are serialized with RFC~6962 domain separation prefixes:
+\begin{equation}
+H_{\text{leaf}} = \text{SHA-256}(0\text{x}00 \parallel \text{Serialize}(M))
+\end{equation}
+and appended to the in-memory sliding buffer $\mathcal{W}$. When the buffer reaches the epoch threshold $S_{\text{epoch}} = 1000$, intermediate tree root $\text{Root}_{\text{epoch}}$ is computed and committed to SQLite WAL alongside boundary cryptographic signatures. The in-memory buffer is then truncated to a maximum of 5,000 blocks via $\mathcal{W}.\text{truncate}(5000)$, bounding resident heap consumption while preserving $\mathcal{O}(\log N)$ composite inclusion verification proofs against historical epoch checkpoints.
 
 \begin{figure}[!t]
 \centering
