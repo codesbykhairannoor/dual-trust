@@ -409,11 +409,11 @@ Algorithm~\ref{alg:merkle} guarantees tamper-evident audit durability under stri
 \caption{Dual-Matrix Authorization \& Quota Gating}
 \label{alg:gate}
 \begin{algorithmic}[1]
-\REQUIRE User $u$, Agent $a$, Tool $t$, Tool Arguments $\text{args}$, Cost $c_{\text{req}}$
+\REQUIRE Principal $u$, Agent $a$, Tool $t$, Args $\text{args}$, Cost $c_{\text{req}}$
 \ENSURE Tool Output $R$ or Exception
 \STATE $b \leftarrow \text{ComputeStripeIndex}(u)$ \COMMENT{via Eq.~\eqref{eq:striped_hash}}
 \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$
-\STATE $\mathcal{S}_u \leftarrow \text{LoadUserState}(u), \quad \mathcal{S}_a \leftarrow \text{LoadAgentState}(a)$
+\STATE $\mathcal{S}_u \leftarrow \text{LoadUser}(u), \; \mathcal{S}_a \leftarrow \text{LoadAgent}(a)$
 \STATE $T_a \leftarrow \text{ComputeDecayedTrust}(\mathcal{S}_a)$ \COMMENT{via Eq.~\eqref{eq:beta_expectation}, \eqref{eq:decay}}
 \IF{$\mathcal{S}_a.\text{Status} = \text{QUARANTINED} \lor T_a < \tau_{\text{quarantine}}$}
     \STATE \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
@@ -446,9 +446,9 @@ Algorithm~\ref{alg:merkle} guarantees tamper-evident audit durability under stri
 \caption{Asymmetric Power-Law Slashing Engine}
 \label{alg:slashing}
 \begin{algorithmic}[1]
-\REQUIRE Target Agent $a$, Reporter $r$, Severity $\text{sev}$, Confidence $c_{\text{rep}}$
+\REQUIRE Target $a$, Reporter $r$, Severity $\text{sev}$, Confidence $c_{\text{rep}}$
 \ENSURE Updated Agent State $\mathcal{S}_a$
-\STATE $\mathcal{S}_a \leftarrow \text{LoadAgentState}(a), \quad \mathcal{S}_r \leftarrow \text{LoadAgentState}(r)$
+\STATE $\mathcal{S}_a \leftarrow \text{LoadAgent}(a), \; \mathcal{S}_r \leftarrow \text{LoadAgent}(r)$
 \IF{$\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land \mathcal{S}_r.\text{Status} = \text{PROBATION}$}
     \STATE $\text{LogAuditDefamationAttempt}(a, r)$
     \RETURN $\mathcal{S}_a$ \COMMENT{Sybil Defamation Immunity}
@@ -473,7 +473,7 @@ Algorithm~\ref{alg:merkle} guarantees tamper-evident audit durability under stri
 \caption{Sliding Merkle Ledger Ingestion \& Epoch Sealing}
 \label{alg:merkle}
 \begin{algorithmic}[1]
-\REQUIRE Audit Record $M$, Sliding Buffer $\mathcal{W}$, Epoch Size $S_{\text{epoch}}$
+\REQUIRE Record $M$, Sliding Buffer $\mathcal{W}$, Epoch Size $S_{\text{epoch}}$
 \ENSURE Merkle Inclusion Receipt $\mathcal{J}$
 \STATE $H_{\text{leaf}} \leftarrow \text{SHA-256}(0\text{x}00 \parallel \text{Serialize}(M))$
 \STATE $\mathcal{W}.\text{append}(H_{\text{leaf}})$
@@ -502,39 +502,35 @@ Algorithm~\ref{alg:merkle} guarantees tamper-evident audit durability under stri
 
 We conduct an extensive empirical evaluation to assess the performance, scalability, and security robustness of DualTrust. Our evaluation is guided by four core research questions:
 \begin{itemize}
-    \item \textbf{RQ1 (Latency Overhead)}: Can DualTrust execute complete authorization and policy verification within the strict $<50\,\mu$s SLA under high-concurrency contention?
-    \item \textbf{RQ2 (Salami-Slicing Containment)}: How rapidly does the asymmetric power-law slashing engine contain an oscillating adversary compared to standard linear systems?
-    \item \textbf{RQ3 (Sybil Defamation Resilience)}: Does the probation barrier successfully protect verified agents from coordinated defamation swarms?
-    \item \textbf{RQ4 (Cryptographic Audit Integrity)}: Can the RFC~6962 Merkle ledger guarantee tamper detection and non-repudiation while maintaining strict $\mathcal{O}(1)$ memory bounds?
+    \item \textbf{RQ1 (Latency)}: Can DualTrust enforce authorization within the $<50\,\mu$s SLA under high-concurrency contention?
+    \item \textbf{RQ2 (Salami-Slicing)}: How rapidly does asymmetric power-law slashing contain oscillating adversaries versus linear baselines?
+    \item \textbf{RQ3 (Sybil Resilience)}: Does the probation barrier protect verified agents against coordinated defamation swarms?
+    \item \textbf{RQ4 (Audit Integrity)}: Does the RFC~6962 ledger guarantee non-repudiation while strictly bounding RAM to $\mathcal{O}(1)$?
 \end{itemize}
 
 \subsection{Experimental Setup \& Hardware Baseline}
 All empirical benchmarks for DualTrust and localized baseline architectures were conducted directly on a physical host workstation equipped with a 12th Gen Intel(R) Core(TM) i3-1215U processor (6 physical cores, 8 execution threads, base frequency 1.20\,GHz, turbo frequency up to 4.40\,GHz), 16.0\,GB RAM, and PCIe NVMe SSD storage running 64-bit Windows 11 and Python 3.13. DualTrust was executed using its pure standard-library runtime with zero external dependencies and zero GPU acceleration.
 
-Comparative baseline frameworks evaluated include:
-\begin{enumerate}
-    \item \textbf{Vanilla Static RBAC}: An in-memory Python hash table mapping user roles directly to permission sets, representing the theoretical latency floor for stateless authorization.
-    \item \textbf{Guardrails AI}~\cite{rajpal2024guardrails}: Evaluated locally using AST-based Pydantic schema validation over tool invocation payloads.
-    \item \textbf{NeMo Guardrails (NVIDIA)}~\cite{rebedea2023nemo}: Represents dialogic inference-time LLM rail evaluation utilizing an 8B-parameter instruction model; baseline latencies reflect standard empirical literature measurements and official vendor telemetry~\cite{rebedea2023nemo}.
-    \item \textbf{Llama Guard 3 (8B)}~\cite{inan2023llama}: Represents specialized classification-based neural moderation; baseline measurements reflect published empirical benchmarks under optimized quantized inference~\cite{inan2023llama}.
-\end{enumerate}
+Comparative baseline frameworks evaluated include: (1)~\textbf{Vanilla Static RBAC}: an in-memory Python hash table mapping user roles directly to permissions, representing the theoretical latency floor for stateless authorization; (2)~\textbf{Guardrails AI}~\cite{rajpal2024guardrails}: localized AST-based Pydantic schema validation over tool arguments; (3)~\textbf{NeMo Guardrails (NVIDIA)}~\cite{rebedea2023nemo}: dialogic inference-time LLM guardrail evaluated under standard empirical literature measurements; and (4)~\textbf{Llama Guard 3 (8B)}~\cite{inan2023llama}: specialized neural classification moderation under quantized inference.
 
 \begin{table*}[t]
 \centering
 \caption{Architectural, Runtime Latency, and Economic Benchmark Comparison}
 \label{tab:benchmark}
-\begin{tabular}{lcccccc}
+\footnotesize
+\setlength{\tabcolsep}{6pt}
+\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llccccc@{}}
 \toprule
-\textbf{Governance Architecture} & \textbf{Evaluation Engine} & \textbf{Mean Latency} & \textbf{Median (p50)} & \textbf{p99 Latency} & \textbf{Cost / 10k Reqs} & \textbf{Audit Provenance} \\
+\textbf{Architecture} & \textbf{Verification Mechanism} & \textbf{Mean Latency} & \textbf{Median (p50)} & \textbf{p99 Latency} & \textbf{Cost / 10k} & \textbf{Audit Trail} \\
 \midrule
-Vanilla Static RBAC & Hash Table Lookup & 12.40\,$\mu$s & 11.20\,$\mu$s & 28.10\,$\mu$s & \$0.00 & None (Plaintext Logs) \\
-Guardrails AI~\cite{rajpal2024guardrails} & AST Schema Validation & 3,200.00\,$\mu$s & 2,850.00\,$\mu$s & 14,500.00\,$\mu$s & \$0.00 & None \\
-NeMo Guardrails (Llama 3)$^\dagger$~\cite{rebedea2023nemo} & LLM Dialogue Reasoner & 420,000.00\,$\mu$s & 390,000.00\,$\mu$s & 1,250,000.00\,$\mu$s & \$25.00 & None \\
-Llama Guard 3 (8B)$^\dagger$~\cite{inan2023llama} & Moderation Neural Net & 850,000.00\,$\mu$s & 810,000.00\,$\mu$s & 2,100,000.00\,$\mu$s & \$50.00 & None \\
+Vanilla Static RBAC & Hash Table Lookup & 12.40\,$\mu$s & 11.20\,$\mu$s & 28.10\,$\mu$s & \$0.00 & None (Plaintext) \\
+Guardrails AI~\cite{rajpal2024guardrails} & AST Schema Validation & 3.20\,ms & 2.85\,ms & 14.50\,ms & \$0.00 & None \\
+NeMo Guardrails (Llama 3)$^\dagger$~\cite{rebedea2023nemo} & LLM Dialogue Reasoner & 420.00\,ms & 390.00\,ms & 1,250.00\,ms & \$25.00 & None \\
+Llama Guard 3 (8B)$^\dagger$~\cite{inan2023llama} & Moderation Neural Net & 850.00\,ms & 810.00\,ms & 2,100.00\,ms & \$50.00 & None \\
 \midrule
 \textbf{DualTrust (Ours)} & \textbf{Asymmetric Bayesian} & \textbf{33.47\,$\mu$s} & \textbf{30.10\,$\mu$s} & \textbf{48.20\,$\mu$s} & \textbf{\$0.00} & \textbf{RFC 6962 Merkle Tree} \\
 \bottomrule
-\end{tabular}
+\end{tabular*}
 \\[3pt]
 \footnotesize{$^\dagger$Inference-time neural guardrail latencies reflect established empirical literature and vendor benchmarks under 8B models~\cite{rebedea2023nemo}, \cite{inan2023llama}.}
 \end{table*}
