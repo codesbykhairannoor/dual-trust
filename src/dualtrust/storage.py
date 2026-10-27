@@ -3,6 +3,8 @@
 from abc import ABC, abstractmethod
 import contextlib
 import json
+import math
+import random
 import sqlite3
 import threading
 import time
@@ -105,6 +107,16 @@ class StorageBackend(ABC):
     def get_ledger_blocks(self) -> List[AuditBlock]:
         """Retrieve all audit blocks in chronological order from genesis."""
 
+    def get_ledger_block(self, block_index: int) -> Optional[AuditBlock]:
+        """Retrieve a single audit block by index."""
+        blocks = self.get_ledger_blocks_range(block_index, 1)
+        return blocks[0] if blocks else None
+
+    def get_ledger_blocks_range(self, start_index: int, limit: int) -> List[AuditBlock]:
+        """Retrieve a slice of audit blocks starting at start_index up to limit."""
+        all_blocks = self.get_ledger_blocks()
+        return all_blocks[start_index : start_index + limit]
+
     @abstractmethod
     def save_mandate(self, mandate: DelegationMandate) -> None:
         """Persist or update an agent-to-agent delegation mandate."""
@@ -149,7 +161,12 @@ class MemoryStorage(StorageBackend):
 
     def deduct_credits(self, user_id: str, amount: int) -> bool:
         """Atomically deduct spendable credits if balance >= amount."""
-        if amount <= 0:
+        if not isinstance(amount, (int, float)) or (isinstance(amount, float) and (math.isnan(amount) or math.isinf(amount))):
+            raise ValueError("Deduct amount must be a finite number.")
+        if amount < 0:
+            raise ValueError("Deduct amount cannot be negative.")
+        amount = int(amount)
+        if amount == 0:
             return True
         with self._lock:
             human = self._humans.get(user_id)
@@ -163,6 +180,11 @@ class MemoryStorage(StorageBackend):
 
     def add_credits(self, user_id: str, amount: int) -> int:
         """Atomically deposit spendable credits."""
+        if not isinstance(amount, (int, float)) or (isinstance(amount, float) and (math.isnan(amount) or math.isinf(amount))):
+            raise ValueError("Deposit amount must be a finite number.")
+        if amount <= 0:
+            raise ValueError(f"Deposit amount must be positive, got {amount}")
+        amount = int(amount)
         with self._lock:
             human = self._humans.get(user_id)
             if not human:
@@ -249,6 +271,16 @@ class MemoryStorage(StorageBackend):
         with self._lock:
             return list(self._ledger_blocks)
 
+    def get_ledger_block(self, block_index: int) -> Optional[AuditBlock]:
+        with self._lock:
+            if 0 <= block_index < len(self._ledger_blocks):
+                return self._ledger_blocks[block_index]
+            return None
+
+    def get_ledger_blocks_range(self, start_index: int, limit: int) -> List[AuditBlock]:
+        with self._lock:
+            return self._ledger_blocks[start_index : start_index + limit]
+
     def save_mandate(self, mandate: DelegationMandate) -> None:
         with self._lock:
             self._mandates[mandate.mandate_id] = mandate
@@ -263,22 +295,27 @@ class MemoryStorage(StorageBackend):
 
 
 class SQLiteStorage(StorageBackend):
-    """Persistent, thread-safe SQLite storage backend with thread-local connection pooling."""
+    """Persistent, thread-safe SQLite storage backend with thread-local connection pooling,
+    WAL mode, busy timeouts, immediate write transactions, and cross-process data_version cache synchronization."""
 
     def __init__(self, db_path: str = "dualtrust.db") -> None:
         self.db_path = db_path
         self._lock = threading.RLock()
         self._local = threading.local()
         self._all_conns: List[sqlite3.Connection] = []
+        self._cache_agents: Dict[str, AgentProfile] = {}
+        self._cache_humans: Dict[str, HumanProfile] = {}
+        self._last_data_version: int = -1
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
         conn = getattr(self._local, "conn", None)
         if conn is None:
-            conn = sqlite3.connect(self.db_path, timeout=10.0, check_same_thread=False)
+            conn = sqlite3.connect(self.db_path, timeout=15.0, check_same_thread=False, isolation_level=None)
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA busy_timeout = 10000;")
+            conn.execute("PRAGMA busy_timeout = 15000;")
             conn.execute("PRAGMA synchronous = NORMAL;")
+            conn.execute("PRAGMA cache_size = -64000;")
             self._local.conn = conn
             with self._lock:
                 self._all_conns.append(conn)
@@ -288,6 +325,97 @@ class SQLiteStorage(StorageBackend):
     def _connection(self):
         conn = self._get_connection()
         yield conn
+
+    @contextlib.contextmanager
+    def _write_transaction(self, max_retries: int = 5, initial_backoff: float = 0.02):
+        """Execute a write transaction using BEGIN IMMEDIATE to avoid lock escalation deadlocks."""
+        with self._lock:
+            conn = self._get_connection()
+            depth = getattr(self._local, "tx_depth", 0)
+            if depth > 0:
+                self._local.tx_depth += 1
+                try:
+                    yield conn
+                finally:
+                    self._local.tx_depth -= 1
+                return
+
+            attempt = 0
+            while True:
+                try:
+                    conn.execute("BEGIN IMMEDIATE;")
+                    break
+                except sqlite3.OperationalError as e:
+                    err_msg = str(e).lower()
+                    if "locked" in err_msg or "busy" in err_msg:
+                        attempt += 1
+                        if attempt > max_retries:
+                            raise
+                        backoff = (initial_backoff * (2 ** (attempt - 1))) + random.uniform(0.005, 0.02)
+                        time.sleep(backoff)
+                    else:
+                        raise
+
+            self._local.tx_depth = 1
+            try:
+                yield conn
+                conn.execute("COMMIT;")
+                try:
+                    cur = conn.execute("PRAGMA data_version;")
+                    row = cur.fetchone()
+                    if row:
+                        self._last_data_version = int(row[0])
+                except Exception:
+                    pass
+            except Exception:
+                try:
+                    conn.execute("ROLLBACK;")
+                except Exception:
+                    pass
+                raise
+            finally:
+                self._local.tx_depth = 0
+
+    def _copy_agent(self, profile: AgentProfile) -> AgentProfile:
+        return AgentProfile(
+            agent_id=profile.agent_id,
+            alpha=profile.alpha,
+            beta=profile.beta,
+            trust_score=profile.trust_score,
+            status=profile.status,
+            violations_count=profile.violations_count,
+            consecutive_clean_actions=profile.consecutive_clean_actions,
+            minor_infractions=profile.minor_infractions,
+            lifetime_minor_infractions=profile.lifetime_minor_infractions,
+            last_updated=profile.last_updated,
+            metadata=dict(profile.metadata),
+        )
+
+    def _copy_human(self, profile: HumanProfile) -> HumanProfile:
+        return HumanProfile(
+            user_id=profile.user_id,
+            social_credit=profile.social_credit,
+            tier=profile.tier,
+            credits_balance=profile.credits_balance,
+            is_active=profile.is_active,
+            last_updated=profile.last_updated,
+            metadata=dict(profile.metadata),
+        )
+
+    def _sync_cache(self, conn: sqlite3.Connection) -> None:
+        """Invalidate local memory cache if another process or connection committed changes via PRAGMA data_version."""
+        try:
+            cur = conn.execute("PRAGMA data_version;")
+            row = cur.fetchone()
+            if row:
+                curr_ver = int(row[0])
+                if self._last_data_version != -1 and curr_ver != self._last_data_version:
+                    self._cache_agents.clear()
+                    self._cache_humans.clear()
+                self._last_data_version = curr_ver
+        except Exception:
+            self._cache_agents.clear()
+            self._cache_humans.clear()
 
     def checkpoint(self) -> None:
         """Force a WAL checkpoint to flush transaction logs to disk."""
@@ -304,127 +432,148 @@ class SQLiteStorage(StorageBackend):
                     pass
             self._all_conns.clear()
             self._local = threading.local()
+            self._cache_agents.clear()
+            self._cache_humans.clear()
+            self._last_data_version = -1
 
     def _init_db(self) -> None:
-        with self._lock, self._connection() as conn:
+        with self._lock:
+            conn = self._get_connection()
             conn.execute("PRAGMA journal_mode = WAL;")
             conn.execute("PRAGMA synchronous = NORMAL;")
-            conn.execute("PRAGMA busy_timeout = 10000;")
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS agents (
-                    agent_id TEXT PRIMARY KEY,
-                    alpha REAL,
-                    beta REAL,
-                    trust_score REAL,
-                    status TEXT,
-                    violations_count INTEGER,
-                    consecutive_clean_actions INTEGER DEFAULT 0,
-                    last_updated REAL,
-                    metadata_json TEXT
+            conn.execute("PRAGMA busy_timeout = 15000;")
+            with self._write_transaction():
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS agents (
+                        agent_id TEXT PRIMARY KEY,
+                        alpha REAL,
+                        beta REAL,
+                        trust_score REAL,
+                        status TEXT,
+                        violations_count INTEGER,
+                        consecutive_clean_actions INTEGER DEFAULT 0,
+                        minor_infractions INTEGER DEFAULT 0,
+                        lifetime_minor_infractions INTEGER DEFAULT 0,
+                        last_updated REAL,
+                        metadata_json TEXT
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS humans (
-                    user_id TEXT PRIMARY KEY,
-                    social_credit INTEGER,
-                    tier TEXT,
-                    credits_balance INTEGER,
-                    is_active INTEGER,
-                    last_updated REAL,
-                    metadata_json TEXT
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS humans (
+                        user_id TEXT PRIMARY KEY,
+                        social_credit INTEGER,
+                        tier TEXT,
+                        credits_balance INTEGER,
+                        is_active INTEGER,
+                        last_updated REAL,
+                        metadata_json TEXT
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS violations (
-                    event_id TEXT PRIMARY KEY,
-                    agent_id TEXT,
-                    violation_type TEXT,
-                    severity REAL,
-                    details TEXT,
-                    penalty_applied REAL,
-                    timestamp REAL
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS violations (
+                        event_id TEXT PRIMARY KEY,
+                        agent_id TEXT,
+                        violation_type TEXT,
+                        severity REAL,
+                        details TEXT,
+                        penalty_applied REAL,
+                        timestamp REAL
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS reflections (
-                    reflection_id TEXT PRIMARY KEY,
-                    agent_id TEXT,
-                    event_id TEXT,
-                    mistake_analysis TEXT,
-                    corrective_action TEXT,
-                    timestamp REAL
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS reflections (
+                        reflection_id TEXT PRIMARY KEY,
+                        agent_id TEXT,
+                        event_id TEXT,
+                        mistake_analysis TEXT,
+                        corrective_action TEXT,
+                        timestamp REAL
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS challenges (
-                    challenge_id TEXT PRIMARY KEY,
-                    user_id TEXT,
-                    agent_id TEXT,
-                    action_name TEXT,
-                    arguments_hash TEXT,
-                    cost_credits INTEGER,
-                    created_at REAL,
-                    expires_at REAL,
-                    token TEXT,
-                    status TEXT,
-                    resolved_at REAL,
-                    resolution_reason TEXT
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS challenges (
+                        challenge_id TEXT PRIMARY KEY,
+                        user_id TEXT,
+                        agent_id TEXT,
+                        action_name TEXT,
+                        arguments_hash TEXT,
+                        cost_credits INTEGER,
+                        created_at REAL,
+                        expires_at REAL,
+                        token TEXT,
+                        status TEXT,
+                        resolved_at REAL,
+                        resolution_reason TEXT
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS ledger_blocks (
-                    block_index INTEGER PRIMARY KEY,
-                    timestamp REAL,
-                    event_type TEXT,
-                    entity_id TEXT,
-                    payload_json TEXT,
-                    prev_hash TEXT,
-                    block_hash TEXT
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS ledger_blocks (
+                        block_index INTEGER PRIMARY KEY,
+                        timestamp REAL,
+                        event_type TEXT,
+                        entity_id TEXT,
+                        payload_json TEXT,
+                        prev_hash TEXT,
+                        block_hash TEXT
+                    )
+                    """
                 )
-                """
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS delegation_mandates (
-                    mandate_id TEXT PRIMARY KEY,
-                    parent_agent_id TEXT,
-                    sub_agent_id TEXT,
-                    user_id TEXT,
-                    parent_mandate_id TEXT,
-                    current_depth INTEGER,
-                    max_depth INTEGER,
-                    max_credits INTEGER,
-                    credits_used INTEGER,
-                    reserved_child_credits INTEGER,
-                    allowed_actions_json TEXT,
-                    expires_at REAL,
-                    created_at REAL,
-                    status TEXT,
-                    metadata_json TEXT,
-                    signature TEXT
+                conn.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS delegation_mandates (
+                        mandate_id TEXT PRIMARY KEY,
+                        parent_agent_id TEXT,
+                        sub_agent_id TEXT,
+                        user_id TEXT,
+                        parent_mandate_id TEXT,
+                        current_depth INTEGER,
+                        max_depth INTEGER,
+                        max_credits INTEGER,
+                        credits_used INTEGER,
+                        reserved_child_credits INTEGER,
+                        allowed_actions_json TEXT,
+                        expires_at REAL,
+                        created_at REAL,
+                        status TEXT,
+                        metadata_json TEXT,
+                        signature TEXT
+                    )
+                    """
                 )
-                """
-            )
-            conn.commit()
+                try:
+                    conn.execute("ALTER TABLE agents ADD COLUMN minor_infractions INTEGER DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass
+                try:
+                    conn.execute("ALTER TABLE agents ADD COLUMN lifetime_minor_infractions INTEGER DEFAULT 0")
+                except sqlite3.OperationalError:
+                    pass
+            try:
+                cur = conn.execute("PRAGMA data_version;")
+                row = cur.fetchone()
+                if row:
+                    self._last_data_version = int(row[0])
+            except Exception:
+                pass
 
     def save_agent(self, profile: AgentProfile) -> None:
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO agents 
-                (agent_id, alpha, beta, trust_score, status, violations_count, consecutive_clean_actions, last_updated, metadata_json)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (agent_id, alpha, beta, trust_score, status, violations_count, consecutive_clean_actions, minor_infractions, lifetime_minor_infractions, last_updated, metadata_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     profile.agent_id,
@@ -434,21 +583,29 @@ class SQLiteStorage(StorageBackend):
                     profile.status.value,
                     profile.violations_count,
                     profile.consecutive_clean_actions,
+                    profile.minor_infractions,
+                    profile.lifetime_minor_infractions,
                     profile.last_updated,
                     json.dumps(profile.metadata),
                 ),
             )
-            conn.commit()
+            self._cache_agents[profile.agent_id] = self._copy_agent(profile)
 
     def get_agent(self, agent_id: str) -> Optional[AgentProfile]:
         with self._lock, self._connection() as conn:
+            self._sync_cache(conn)
+            if agent_id in self._cache_agents:
+                return self._copy_agent(self._cache_agents[agent_id])
+
             cursor = conn.execute("SELECT * FROM agents WHERE agent_id = ?", (agent_id,))
             row = cursor.fetchone()
             if not row:
                 return None
             keys = row.keys()
             clean_actions = row["consecutive_clean_actions"] if "consecutive_clean_actions" in keys else 0
-            return AgentProfile(
+            minor_infractions = row["minor_infractions"] if "minor_infractions" in keys else 0
+            lifetime_minor_infractions = row["lifetime_minor_infractions"] if "lifetime_minor_infractions" in keys else 0
+            profile = AgentProfile(
                 agent_id=row["agent_id"],
                 alpha=row["alpha"],
                 beta=row["beta"],
@@ -456,12 +613,16 @@ class SQLiteStorage(StorageBackend):
                 status=AgentStatus(row["status"]),
                 violations_count=row["violations_count"],
                 consecutive_clean_actions=clean_actions,
+                minor_infractions=minor_infractions,
+                lifetime_minor_infractions=lifetime_minor_infractions,
                 last_updated=row["last_updated"],
                 metadata=json.loads(row["metadata_json"] or "{}"),
             )
+            self._cache_agents[agent_id] = self._copy_agent(profile)
+            return profile
 
     def save_human(self, profile: HumanProfile) -> None:
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO humans
@@ -478,15 +639,19 @@ class SQLiteStorage(StorageBackend):
                     json.dumps(profile.metadata),
                 ),
             )
-            conn.commit()
+            self._cache_humans[profile.user_id] = self._copy_human(profile)
 
     def get_human(self, user_id: str) -> Optional[HumanProfile]:
         with self._lock, self._connection() as conn:
+            self._sync_cache(conn)
+            if user_id in self._cache_humans:
+                return self._copy_human(self._cache_humans[user_id])
+
             cursor = conn.execute("SELECT * FROM humans WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
             if not row:
                 return None
-            return HumanProfile(
+            profile = HumanProfile(
                 user_id=row["user_id"],
                 social_credit=row["social_credit"],
                 tier=HumanTier(row["tier"]),
@@ -495,12 +660,19 @@ class SQLiteStorage(StorageBackend):
                 last_updated=row["last_updated"],
                 metadata=json.loads(row["metadata_json"] or "{}"),
             )
+            self._cache_humans[user_id] = self._copy_human(profile)
+            return profile
 
     def deduct_credits(self, user_id: str, amount: int) -> bool:
         """Atomically deduct spendable credits in SQLite if balance >= amount."""
-        if amount <= 0:
+        if not isinstance(amount, (int, float)) or (isinstance(amount, float) and (math.isnan(amount) or math.isinf(amount))):
+            raise ValueError("Deduct amount must be a finite number.")
+        if amount < 0:
+            raise ValueError("Deduct amount cannot be negative.")
+        amount = int(amount)
+        if amount == 0:
             return True
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             now = time.time()
             cursor = conn.execute(
                 """
@@ -510,12 +682,21 @@ class SQLiteStorage(StorageBackend):
                 """,
                 (amount, now, user_id, amount),
             )
-            conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            if success:
+                if user_id in self._cache_humans:
+                    self._cache_humans[user_id].credits_balance -= amount
+                    self._cache_humans[user_id].last_updated = now
+            return success
 
     def add_credits(self, user_id: str, amount: int) -> int:
         """Atomically deposit credits into human account in SQLite."""
-        with self._lock, self._connection() as conn:
+        if not isinstance(amount, (int, float)) or (isinstance(amount, float) and (math.isnan(amount) or math.isinf(amount))):
+            raise ValueError("Deposit amount must be a finite number.")
+        if amount <= 0:
+            raise ValueError(f"Deposit amount must be positive, got {amount}")
+        amount = int(amount)
+        with self._write_transaction() as conn:
             now = time.time()
             cursor = conn.execute(
                 """
@@ -529,11 +710,14 @@ class SQLiteStorage(StorageBackend):
                 raise EntityNotFoundError(f"Human '{user_id}' not found.")
             cursor = conn.execute("SELECT credits_balance FROM humans WHERE user_id = ?", (user_id,))
             row = cursor.fetchone()
-            conn.commit()
-            return int(row["credits_balance"])
+            new_balance = int(row["credits_balance"])
+            if user_id in self._cache_humans:
+                self._cache_humans[user_id].credits_balance = new_balance
+                self._cache_humans[user_id].last_updated = now
+            return new_balance
 
     def record_violation(self, event: ViolationEvent) -> None:
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT INTO violations
@@ -550,7 +734,6 @@ class SQLiteStorage(StorageBackend):
                     event.timestamp,
                 ),
             )
-            conn.commit()
 
     def get_violations(
         self, agent_id: Optional[str] = None, limit: int = 50
@@ -585,7 +768,7 @@ class SQLiteStorage(StorageBackend):
             return events
 
     def save_reflection(self, reflection: EpisodicReflection) -> None:
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO reflections
@@ -601,7 +784,6 @@ class SQLiteStorage(StorageBackend):
                     reflection.timestamp,
                 ),
             )
-            conn.commit()
 
     def get_reflections(
         self, agent_id: str, limit: int = 5
@@ -630,7 +812,7 @@ class SQLiteStorage(StorageBackend):
             ]
 
     def save_challenge(self, challenge: HumanApprovalChallenge) -> None:
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO challenges
@@ -652,7 +834,6 @@ class SQLiteStorage(StorageBackend):
                     challenge.resolution_reason,
                 ),
             )
-            conn.commit()
 
     def get_challenge(self, challenge_id: str) -> Optional[HumanApprovalChallenge]:
         with self._lock, self._connection() as conn:
@@ -683,7 +864,7 @@ class SQLiteStorage(StorageBackend):
         reason: str = "",
     ) -> bool:
         """Atomic status update: enforces valid state transitions (single-use anti-replay enforcement)."""
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             if status in (ChallengeStatus.APPROVED, ChallengeStatus.REJECTED):
                 prev_statuses = (ChallengeStatus.PENDING.value,)
             elif status == ChallengeStatus.CONSUMED:
@@ -702,11 +883,10 @@ class SQLiteStorage(StorageBackend):
                 """,
                 (status.value, resolved_at, reason, challenge_id, *prev_statuses),
             )
-            conn.commit()
             return cursor.rowcount > 0
 
     def save_ledger_block(self, block: AuditBlock) -> None:
-        with self._lock, self._connection() as conn:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO ledger_blocks
@@ -723,7 +903,6 @@ class SQLiteStorage(StorageBackend):
                     block.block_hash,
                 ),
             )
-            conn.commit()
 
     def get_ledger_blocks(self) -> List[AuditBlock]:
         with self._lock, self._connection() as conn:
@@ -742,8 +921,44 @@ class SQLiteStorage(StorageBackend):
                 for row in rows
             ]
 
-    def save_mandate(self, mandate: DelegationMandate) -> None:
+    def get_ledger_block(self, block_index: int) -> Optional[AuditBlock]:
         with self._lock, self._connection() as conn:
+            cursor = conn.execute("SELECT * FROM ledger_blocks WHERE block_index = ?", (block_index,))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return AuditBlock(
+                index=row["block_index"],
+                timestamp=row["timestamp"],
+                event_type=row["event_type"],
+                entity_id=row["entity_id"],
+                payload=json.loads(row["payload_json"]),
+                prev_hash=row["prev_hash"],
+                block_hash=row["block_hash"],
+            )
+
+    def get_ledger_blocks_range(self, start_index: int, limit: int) -> List[AuditBlock]:
+        with self._lock, self._connection() as conn:
+            cursor = conn.execute(
+                "SELECT * FROM ledger_blocks WHERE block_index >= ? ORDER BY block_index ASC LIMIT ?",
+                (start_index, limit),
+            )
+            rows = cursor.fetchall()
+            return [
+                AuditBlock(
+                    index=row["block_index"],
+                    timestamp=row["timestamp"],
+                    event_type=row["event_type"],
+                    entity_id=row["entity_id"],
+                    payload=json.loads(row["payload_json"]),
+                    prev_hash=row["prev_hash"],
+                    block_hash=row["block_hash"],
+                )
+                for row in rows
+            ]
+
+    def save_mandate(self, mandate: DelegationMandate) -> None:
+        with self._write_transaction() as conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO delegation_mandates
@@ -770,7 +985,6 @@ class SQLiteStorage(StorageBackend):
                     mandate.signature,
                 ),
             )
-            conn.commit()
 
     def get_mandate(self, mandate_id: str) -> Optional[DelegationMandate]:
         with self._lock, self._connection() as conn:
@@ -822,4 +1036,5 @@ class SQLiteStorage(StorageBackend):
                 )
                 for row in rows
             ]
+
 

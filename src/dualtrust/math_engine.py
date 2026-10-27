@@ -20,6 +20,7 @@ class ReputationMath:
         slashing_exponent: float = 1.8,
         quarantine_threshold: float = 0.20,
         recovery_clean_window: int = 20,
+        minor_infraction_threshold: int = 3,
     ) -> None:
         """Initialize mathematical configuration.
 
@@ -30,6 +31,7 @@ class ReputationMath:
             slashing_exponent: Exponent for repeat infraction escalation (gamma >= 1.0).
             quarantine_threshold: Lower-water trust boundary below which agents are isolated.
             recovery_clean_window: Consecutive clean actions required to decrement the violation count.
+            minor_infraction_threshold: Count of minor infractions (severity <= 1.5) before escalating to a formal strike.
         """
         if decay_factor is not None:
             if 0.0 < decay_factor < 1.0:
@@ -43,12 +45,15 @@ class ReputationMath:
             raise ValueError("slashing_exponent must be >= 1.0")
         if recovery_clean_window < 1:
             raise ValueError("recovery_clean_window must be >= 1")
+        if minor_infraction_threshold < 1:
+            raise ValueError("minor_infraction_threshold must be >= 1")
 
         self.half_life_seconds = half_life_seconds
         self.penalty_multiplier = penalty_multiplier
         self.slashing_exponent = slashing_exponent
         self.quarantine_threshold = quarantine_threshold
         self.recovery_clean_window = recovery_clean_window
+        self.minor_infraction_threshold = minor_infraction_threshold
 
     @staticmethod
     def expected_trust(alpha: float, beta: float) -> float:
@@ -112,7 +117,10 @@ class ReputationMath:
         profile.consecutive_clean_actions += 1
         if profile.consecutive_clean_actions >= self.recovery_clean_window:
             profile.violations_count = max(0, profile.violations_count - 1)
+            profile.minor_infractions = 0
             profile.consecutive_clean_actions = 0
+        elif profile.minor_infractions > 0 and profile.consecutive_clean_actions % 5 == 0:
+            profile.minor_infractions = max(0, profile.minor_infractions - 1)
 
         profile.trust_score = self.expected_trust(profile.alpha, profile.beta)
         if profile.status != AgentStatus.QUARANTINED:
@@ -140,16 +148,25 @@ class ReputationMath:
         if is_untrusted_reporter and profile.status == AgentStatus.VERIFIED:
             return profile.trust_score, 0.0, False
 
-        # Sybil Escalation Resistance: Accusations from untrusted reporters (< 0.20)
-        # or minor transient glitches (severity <= 1.5) must NOT increment the escalation counter (violations_count)
-        # and must use linear scaling (exponent = 1.0) to prevent power-law amplification
+        # Sybil Escalation Resistance & Salami Slicing Defense:
+        # Accusations from untrusted reporters (< 0.20) must NOT increment escalation counters.
+        # Minor transient glitches (severity <= 1.5) accumulate via minor_infractions counter.
+        # Once minor_infractions reaches minor_infraction_threshold, it escalates to a formal strike.
         is_minor_glitch = severity <= 1.5
-        if is_untrusted_reporter or is_minor_glitch:
+        if is_untrusted_reporter:
             effective_exponent = 1.0
-            if is_minor_glitch:
-                profile.consecutive_clean_actions = max(0, profile.consecutive_clean_actions - 5)
+            profile.consecutive_clean_actions = 0
+        elif is_minor_glitch:
+            profile.minor_infractions += 1
+            profile.lifetime_minor_infractions += 1
+            profile.consecutive_clean_actions = 0
+            lifetime_strikes = profile.lifetime_minor_infractions // self.minor_infraction_threshold
+            if profile.minor_infractions >= self.minor_infraction_threshold or lifetime_strikes > profile.violations_count:
+                profile.violations_count = max(profile.violations_count + 1, lifetime_strikes)
+                profile.minor_infractions = 0
+                effective_exponent = self.slashing_exponent
             else:
-                profile.consecutive_clean_actions = 0
+                effective_exponent = 1.0
         else:
             profile.violations_count += 1
             profile.consecutive_clean_actions = 0

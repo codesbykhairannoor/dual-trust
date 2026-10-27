@@ -1,13 +1,13 @@
 # DualTrust
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v0.3.1-blue.svg)](https://pypi.org/project/dualtrust/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v0.4.0-blue.svg)](https://pypi.org/project/dualtrust/)
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg)](https://pypi.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20(Pure%20Python)-success.svg)](https://pypi.org)
 [![Cryptographic Audit](https://img.shields.io/badge/audit-RFC%206962%20Merkle%20Tree-orange.svg)](https://github.com/codesbykhairannoor/dual-trust)
 [![A2A Protocol](https://img.shields.io/badge/A2A-Delegation%20Mandates-teal.svg)](https://github.com/codesbykhairannoor/dual-trust)
 [![Async Ready](https://img.shields.io/badge/async-Native%20Coroutines-purple.svg)](https://github.com/codesbykhairannoor/dual-trust)
-[![Tests](https://img.shields.io/badge/tests-135%20passed-brightgreen.svg)](https://github.com/codesbykhairannoor/dual-trust)
+[![Tests](https://img.shields.io/badge/tests-171%20passed-brightgreen.svg)](https://github.com/codesbykhairannoor/dual-trust)
 
 > **Enterprise-Grade Dual-Trust Matrix**: Human Social Credit and Autonomous AI Agent Reputation Engine with Asymmetric Power-Law Slashing ($v^{1.8}$), Clustered Infraction Exponential Acceleration, Agent-to-Agent (A2A) Cryptographic Delegation Mandates, RFC 6962 Merkle Tree Proofs, NIST SP 800-63B Stepped Human Authorization, Anthropic MCP Gateway Middleware, Automated Behavioral Watchdogs, and Zero External Dependencies.
 

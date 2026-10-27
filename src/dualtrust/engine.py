@@ -6,6 +6,8 @@ import hashlib
 import hmac
 import inspect
 import json
+import math
+import threading
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 import uuid
@@ -73,6 +75,9 @@ class DualTrust:
         secret_key: Optional[str] = None,
         verdict_ttl_seconds: float = 60.0,
         watchdog: Optional[AgentWatchdog] = None,
+        min_clean_actions_to_report: int = 5,
+        max_in_memory_blocks: int = 5000,
+        epoch_size: int = 1000,
     ) -> None:
         """Initialize the DualTrust engine.
 
@@ -85,27 +90,52 @@ class DualTrust:
             secret_key: Cryptographic HMAC key for signing verdict receipts (defaults to random).
             verdict_ttl_seconds: Time-to-live validity window for verdict receipts.
             watchdog: Optional sliding window behavioral watchdog for anomaly detection & rate limiting.
+            min_clean_actions_to_report: Minimum verified clean streak required before probation agents gain reporting credibility.
+            max_in_memory_blocks: Maximum audit blocks kept in RAM before sliding-window pruning.
+            epoch_size: Number of blocks per cryptographically sealed Merkle epoch checkpoint.
         """
         self.storage = storage or MemoryStorage()
         self.math = math_engine or ReputationMath()
         if ledger is None:
-            self.ledger = CryptographicLedger(storage=self.storage)
+            self.ledger = CryptographicLedger(
+                storage=self.storage,
+                max_in_memory_blocks=max_in_memory_blocks,
+                epoch_size=epoch_size,
+            )
         else:
             self.ledger = ledger
             if getattr(self.ledger, "_storage", None) is None:
                 self.ledger._storage = self.storage
                 if hasattr(self.storage, "get_ledger_blocks") and not self.ledger._chain:
-                    self.ledger._chain = list(self.storage.get_ledger_blocks())
+                    for b in self.storage.get_ledger_blocks():
+                        self.ledger._append_internal(b, persist=False)
         self.secret_key = secret_key or uuid.uuid4().hex
         self.verdict_ttl_seconds = verdict_ttl_seconds
         self.watchdog = watchdog
         self.mandate_manager = MandateManager(secret_key=self.secret_key, storage=self.storage)
+
+        if min_clean_actions_to_report < 0:
+            raise ValueError("min_clean_actions_to_report must be non-negative.")
+        self.min_clean_actions_to_report = min_clean_actions_to_report
 
         weight_sum = human_weight + agent_weight
         if weight_sum <= 0:
             raise ValueError("Sum of human_weight and agent_weight must be positive.")
         self.human_weight = human_weight / weight_sum
         self.agent_weight = agent_weight / weight_sum
+
+        # Striped reentrant locks (64 buckets) for non-blocking per-user concurrency
+        self._striped_user_locks = [threading.RLock() for _ in range(64)]
+
+    def _get_user_lock(self, user_id: str) -> threading.RLock:
+        """Fetch deterministic striped reentrant lock for a user to eliminate race conditions.
+        
+        Uses SHA-256 hashing to guarantee deterministic bucket mapping across all threads,
+        worker processes, and Python restart seeds (neutralizing PYTHONHASHSEED randomization).
+        """
+        digest_bytes = hashlib.sha256(str(user_id).encode("utf-8")).digest()
+        bucket = int.from_bytes(digest_bytes[:4], "big") % 64
+        return self._striped_user_locks[bucket]
 
 
     # =========================================================================
@@ -185,9 +215,11 @@ class DualTrust:
         if profile is None:
             profile = self.register_agent(agent_id=agent_id)
         else:
-            # Apply continuous half-life decay on retrieval
-            self.math.apply_time_decay(profile)
-            self.storage.save_agent(profile)
+            # Apply continuous half-life decay on retrieval if >= 1.0s elapsed
+            now = time.time()
+            if (now - profile.last_updated) >= 1.0:
+                self.math.apply_time_decay(profile, current_time=now)
+                self.storage.save_agent(profile)
         return profile
 
     # =========================================================================
@@ -196,33 +228,43 @@ class DualTrust:
 
     def adjust_human_credit(self, user_id: str, delta: int, reason: str = "") -> HumanProfile:
         """Adjust a human's social credit score up or down and append to hash chain."""
-        profile = self.get_or_create_human(user_id)
-        old_score = profile.social_credit
-        profile.social_credit = max(0, min(1000, profile.social_credit + delta))
-        profile.tier = HumanTier.from_score(profile.social_credit)
-        profile.last_updated = time.time()
-        if reason:
-            profile.metadata.setdefault("credit_history", []).append(
-                {"delta": delta, "reason": reason, "timestamp": profile.last_updated}
+        if not isinstance(delta, (int, float)) or (isinstance(delta, float) and (math.isnan(delta) or math.isinf(delta))):
+            raise ValueError("delta must be a finite number.")
+        delta = int(delta)
+        with self._get_user_lock(user_id):
+            profile = self.get_or_create_human(user_id)
+            old_score = profile.social_credit
+            profile.social_credit = max(0, min(1000, profile.social_credit + delta))
+            profile.tier = HumanTier.from_score(profile.social_credit)
+            profile.last_updated = time.time()
+            if reason:
+                profile.metadata.setdefault("credit_history", []).append(
+                    {"delta": delta, "reason": reason, "timestamp": profile.last_updated}
+                )
+            self.storage.save_human(profile)
+            self.ledger.append(
+                event_type="CREDIT_ADJUSTMENT",
+                entity_id=user_id,
+                payload={"old_score": old_score, "new_score": profile.social_credit, "delta": delta, "reason": reason},
             )
-        self.storage.save_human(profile)
-        self.ledger.append(
-            event_type="CREDIT_ADJUSTMENT",
-            entity_id=user_id,
-            payload={"old_score": old_score, "new_score": profile.social_credit, "delta": delta, "reason": reason},
-        )
-        return profile
+            return profile
 
     def add_credits(self, user_id: str, amount: int) -> int:
         """Deposit spendable token credits to a human user account."""
-        self.get_or_create_human(user_id)
-        new_balance = self.storage.add_credits(user_id, amount)
-        self.ledger.append(
-            event_type="CREDITS_DEPOSITED",
-            entity_id=user_id,
-            payload={"amount": amount, "new_balance": new_balance},
-        )
-        return new_balance
+        if not isinstance(amount, (int, float)) or (isinstance(amount, float) and (math.isnan(amount) or math.isinf(amount))):
+            raise ValueError("Deposit amount must be a finite number.")
+        if amount <= 0:
+            raise ValueError(f"Deposit amount must be positive, got {amount}")
+        amount = int(amount)
+        with self._get_user_lock(user_id):
+            self.get_or_create_human(user_id)
+            new_balance = self.storage.add_credits(user_id, amount)
+            self.ledger.append(
+                event_type="CREDITS_DEPOSITED",
+                entity_id=user_id,
+                payload={"amount": amount, "new_balance": new_balance},
+            )
+            return new_balance
 
     def reward_agent(self, agent_id: str, weight: float = 1.0) -> float:
         """Reward an agent for successful, compliant task execution."""
@@ -263,15 +305,32 @@ class DualTrust:
                 if reporter_agent.status == AgentStatus.QUARANTINED:
                     reporter_credibility = 0.05
                 elif reporter_agent.status == AgentStatus.RESTRICTED:
-                    reporter_credibility = min(0.25, reporter_agent.trust_score)
+                    reporter_credibility = min(0.15, reporter_agent.trust_score)
                 elif reporter_agent.status == AgentStatus.PROBATION:
-                    reporter_credibility = min(0.50, reporter_agent.trust_score)
+                    # Sybil Cold-Start Bootstrap Defense:
+                    # Brand-new or unproven agents in PROBATION with insufficient clean history
+                    # cannot unilaterally slash entities or trigger repeat-offender escalations.
+                    target_is_verified = (profile.status == AgentStatus.VERIFIED)
+                    if reporter_agent.consecutive_clean_actions < self.min_clean_actions_to_report:
+                        reporter_credibility = 0.05
+                    elif target_is_verified:
+                        # Sybil Defamation Hardening:
+                        # Even if an unproven agent in PROBATION farms clean actions, it cannot unilaterally
+                        # defame or slash a VERIFIED agent (< 0.20 threshold) without supervisor / human endorsement.
+                        reporter_credibility = 0.15
+                    else:
+                        # Graduated credibility based on proven compliant streak against non-verified peers
+                        streak_factor = min(1.0, reporter_agent.consecutive_clean_actions / (self.min_clean_actions_to_report * 2))
+                        reporter_credibility = min(0.50, reporter_agent.trust_score * (0.5 + 0.5 * streak_factor))
                 else:
                     reporter_credibility = reporter_agent.trust_score
             else:
                 reporter_human = self.storage.get_human(reporter_id)
                 if reporter_human:
-                    reporter_credibility = max(0.05, min(1.0, reporter_human.social_credit / 1000.0))
+                    if reporter_human.tier in (HumanTier.RESTRICTED, HumanTier.PROBATIONARY):
+                        reporter_credibility = min(0.15, reporter_human.social_credit / 1000.0)
+                    else:
+                        reporter_credibility = max(0.05, min(1.0, reporter_human.social_credit / 1000.0))
                 else:
                     # Unregistered / nonexistent identity (Sybil spoof attempt)
                     reporter_credibility = 0.05
@@ -384,6 +443,9 @@ class DualTrust:
         profile.beta = sample_weight * (1.0 - reset_trust)
         profile.trust_score = reset_trust
         profile.status = self.math.determine_status(reset_trust)
+        profile.violations_count = 0
+        profile.minor_infractions = 0
+        profile.consecutive_clean_actions = 0
         profile.last_updated = time.time()
         self.storage.save_agent(profile)
         self.ledger.append(
@@ -443,181 +505,191 @@ class DualTrust:
         consume_challenge: bool = False,
     ) -> TrustVerdict:
         """Evaluate whether an action is authorized under the dual-trust matrix."""
-        human = self.get_or_create_human(user_id)
-        agent = self.get_or_create_agent(agent_id)
+        # Input validation: Ensure cost_credits is a valid non-negative number
+        if not isinstance(cost_credits, (int, float)):
+            raise ValueError(f"cost_credits must be a numeric integer or float, got {type(cost_credits).__name__}")
+        if isinstance(cost_credits, float) and (math.isnan(cost_credits) or math.isinf(cost_credits)):
+            raise ValueError("cost_credits cannot be NaN or infinite.")
+        if cost_credits < 0:
+            raise ValueError(f"cost_credits must be non-negative, got {cost_credits}")
+        cost_credits = int(cost_credits)
 
-        reasons: List[str] = []
-        authorized = True
-        challenge_obj: Optional[HumanApprovalChallenge] = None
+        with self._get_user_lock(user_id):
+            human = self.get_or_create_human(user_id)
+            agent = self.get_or_create_agent(agent_id)
 
-        # Check 0: Stepped Human Approval Challenge (NIST SP 800-63B)
-        if require_human_confirmation:
-            if not challenge_id:
-                challenge_obj = self.create_human_challenge(
-                    user_id=user_id,
-                    agent_id=agent_id,
-                    action_name=action_name,
-                    arguments=arguments or {},
-                    cost_credits=cost_credits,
-                )
-                authorized = False
-                reasons.append(
-                    f"Stepped human approval required. Challenge token issued: {challenge_obj.challenge_id}"
-                )
-            else:
-                ch = self.get_challenge(challenge_id)
-                challenge_obj = ch
-                if not ch:
-                    authorized = False
-                    reasons.append(f"Challenge '{challenge_id}' not found.")
-                elif ch.is_expired():
-                    authorized = False
-                    reasons.append(f"Challenge '{challenge_id}' has expired.")
-                elif ch.status == ChallengeStatus.CONSUMED:
-                    authorized = False
-                    reasons.append(f"Challenge '{challenge_id}' has already been consumed.")
-                elif ch.status != ChallengeStatus.APPROVED:
+            reasons: List[str] = []
+            authorized = True
+            challenge_obj: Optional[HumanApprovalChallenge] = None
+
+            # Check 0: Stepped Human Approval Challenge (NIST SP 800-63B)
+            if require_human_confirmation:
+                if not challenge_id:
+                    challenge_obj = self.create_human_challenge(
+                        user_id=user_id,
+                        agent_id=agent_id,
+                        action_name=action_name,
+                        arguments=arguments or {},
+                        cost_credits=cost_credits,
+                    )
                     authorized = False
                     reasons.append(
-                        f"Challenge '{challenge_id}' is not approved (status: {ch.status.value})."
+                        f"Stepped human approval required. Challenge token issued: {challenge_obj.challenge_id}"
                     )
-                elif arguments is not None:
-                    canonical_args = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
-                    if hashlib.sha256(canonical_args.encode("utf-8")).hexdigest() != ch.arguments_hash:
+                else:
+                    ch = self.get_challenge(challenge_id)
+                    challenge_obj = ch
+                    if not ch:
+                        authorized = False
+                        reasons.append(f"Challenge '{challenge_id}' not found.")
+                    elif ch.is_expired():
+                        authorized = False
+                        reasons.append(f"Challenge '{challenge_id}' has expired.")
+                    elif ch.status == ChallengeStatus.CONSUMED:
+                        authorized = False
+                        reasons.append(f"Challenge '{challenge_id}' has already been consumed.")
+                    elif ch.status != ChallengeStatus.APPROVED:
                         authorized = False
                         reasons.append(
-                            "Payload tampering detected: Arguments do not match approved challenge."
+                            f"Challenge '{challenge_id}' is not approved (status: {ch.status.value})."
+                        )
+                    elif arguments is not None:
+                        canonical_args = json.dumps(arguments, sort_keys=True, separators=(",", ":"))
+                        if hashlib.sha256(canonical_args.encode("utf-8")).hexdigest() != ch.arguments_hash:
+                            authorized = False
+                            reasons.append(
+                                "Payload tampering detected: Arguments do not match approved challenge."
+                            )
+
+            # Check 1: Agent Quarantine Check
+            if agent.status == AgentStatus.QUARANTINED:
+                authorized = False
+                reasons.append("Agent is quarantined due to rogue behavior or low reputation.")
+
+            # Check 1.5: Automated Watchdog Sliding Window Inspection (MITRE ATLAS AML.T0029)
+            elif self.watchdog is not None:
+                wv = self.watchdog.inspect_pre_call(agent_id=agent_id, cost_credits=cost_credits)
+                if not wv.action_permitted:
+                    authorized = False
+                    reasons.append(f"Watchdog security trigger: {wv.reason}")
+                    if wv.auto_quarantined and agent.status != AgentStatus.QUARANTINED:
+                        agent.status = AgentStatus.QUARANTINED
+                        self.storage.save_agent(agent)
+                        self.ledger.append(
+                            event_type="WATCHDOG_AUTO_QUARANTINE",
+                            entity_id=agent_id,
+                            payload={"reason": wv.reason},
                         )
 
-        # Check 1: Agent Quarantine Check
-        if agent.status == AgentStatus.QUARANTINED:
-            authorized = False
-            reasons.append("Agent is quarantined due to rogue behavior or low reputation.")
-
-        # Check 1.5: Automated Watchdog Sliding Window Inspection (MITRE ATLAS AML.T0029)
-        elif self.watchdog is not None:
-            wv = self.watchdog.inspect_pre_call(agent_id=agent_id, cost_credits=cost_credits)
-            if not wv.action_permitted:
+            # Check 2: Agent Score Threshold
+            elif agent.trust_score < min_agent_score:
                 authorized = False
-                reasons.append(f"Watchdog security trigger: {wv.reason}")
-                if wv.auto_quarantined and agent.status != AgentStatus.QUARANTINED:
-                    agent.status = AgentStatus.QUARANTINED
-                    self.storage.save_agent(agent)
-                    self.ledger.append(
-                        event_type="WATCHDOG_AUTO_QUARANTINE",
-                        entity_id=agent_id,
-                        payload={"reason": wv.reason},
+                reasons.append(
+                    f"Agent trust score ({agent.trust_score:.2f}) below required ({min_agent_score:.2f})."
+                )
+
+            # Check 3: Human Active State
+            if not human.is_active:
+                authorized = False
+                reasons.append("Human social account is inactive or suspended.")
+
+            # Check 4: Human Credit Score Threshold
+            if human.social_credit < min_human_score:
+                authorized = False
+                reasons.append(
+                    f"Human social credit ({human.social_credit}) below required ({min_human_score})."
+                )
+
+            # Check 5: Human Tier Requirement
+            if required_tier is not None:
+                tier_ranks = {
+                    HumanTier.RESTRICTED: 1,
+                    HumanTier.PROBATIONARY: 2,
+                    HumanTier.STANDARD: 3,
+                    HumanTier.HIGH_CLEARANCE: 4,
+                    HumanTier.EXEMPLARY: 5,
+                }
+                if tier_ranks[human.tier] < tier_ranks[required_tier]:
+                    authorized = False
+                    reasons.append(
+                        f"Human clearance tier ({human.tier.value}) does not satisfy required ({required_tier.value})."
                     )
 
-        # Check 2: Agent Score Threshold
-        elif agent.trust_score < min_agent_score:
-            authorized = False
-            reasons.append(
-                f"Agent trust score ({agent.trust_score:.2f}) below required ({min_agent_score:.2f})."
+            # Check 6: Available Credit Balance and Atomic Deduction
+            cost_deducted = 0
+            if cost_credits > 0:
+                if authorized and deduct_cost:
+                    deducted = self.storage.deduct_credits(user_id=user_id, amount=cost_credits)
+                    if not deducted:
+                        authorized = False
+                        reasons.append(
+                            f"Insufficient spendable credits ({human.credits_balance} < {cost_credits})."
+                        )
+                    else:
+                        cost_deducted = cost_credits
+                        refreshed_human = self.storage.get_human(user_id)
+                        if refreshed_human:
+                            human = refreshed_human
+                elif human.credits_balance < cost_credits:
+                    authorized = False
+                    reasons.append(
+                        f"Insufficient spendable credits ({human.credits_balance} < {cost_credits})."
+                    )
+
+            # Compute Composite Score
+            composite = self.math.compute_composite_trust(
+                human_score=human.social_credit,
+                agent_score=agent.trust_score,
+                human_weight=self.human_weight,
+                agent_weight=self.agent_weight,
             )
 
-        # Check 3: Human Active State
-        if not human.is_active:
-            authorized = False
-            reasons.append("Human social account is inactive or suspended.")
-
-        # Check 4: Human Credit Score Threshold
-        if human.social_credit < min_human_score:
-            authorized = False
-            reasons.append(
-                f"Human social credit ({human.social_credit}) below required ({min_human_score})."
-            )
-
-        # Check 5: Human Tier Requirement
-        if required_tier is not None:
-            tier_ranks = {
-                HumanTier.RESTRICTED: 1,
-                HumanTier.PROBATIONARY: 2,
-                HumanTier.STANDARD: 3,
-                HumanTier.HIGH_CLEARANCE: 4,
-                HumanTier.EXEMPLARY: 5,
-            }
-            if tier_ranks[human.tier] < tier_ranks[required_tier]:
-                authorized = False
-                reasons.append(
-                    f"Human clearance tier ({human.tier.value}) does not satisfy required ({required_tier.value})."
+            if authorized and consume_challenge and challenge_id:
+                now = time.time()
+                self.storage.update_challenge_status(
+                    challenge_id=str(challenge_id),
+                    status=ChallengeStatus.CONSUMED,
+                    resolved_at=now,
+                    reason="Consumed via dt.evaluate()",
                 )
 
-        # Check 6: Available Credit Balance
-        if cost_credits > 0 and human.credits_balance < cost_credits:
-            authorized = False
-            reasons.append(
-                f"Insufficient spendable credits ({human.credits_balance} < {cost_credits})."
+            timestamp = time.time()
+            nonce = uuid.uuid4().hex[:16]
+            expires_at = timestamp + self.verdict_ttl_seconds
+            raw_preimage = f"{user_id}:{agent_id}:{nonce}:{timestamp:.4f}:{authorized}:{self.secret_key}"
+            signature = hashlib.sha256(raw_preimage.encode("utf-8")).hexdigest()
+
+            verdict = TrustVerdict(
+                authorized=authorized,
+                composite_score=composite,
+                human_score=human.social_credit,
+                agent_score=agent.trust_score,
+                agent_status=agent.status,
+                cost_deducted=cost_deducted,
+                reasons=reasons,
+                timestamp=timestamp,
+                nonce=nonce,
+                expires_at=expires_at,
+                signature=signature,
+                requires_human_approval=(require_human_confirmation and not challenge_id),
+                challenge=challenge_obj,
             )
 
-        # Compute Composite Score
-        composite = self.math.compute_composite_trust(
-            human_score=human.social_credit,
-            agent_score=agent.trust_score,
-            human_weight=self.human_weight,
-            agent_weight=self.agent_weight,
-        )
-
-        cost_deducted = 0
-        if authorized and deduct_cost and cost_credits > 0:
-            deducted = self.storage.deduct_credits(user_id=user_id, amount=cost_credits)
-            if not deducted:
-                authorized = False
-                reasons.append(
-                    f"Insufficient spendable credits (atomic deduction failed: balance < {cost_credits})."
-                )
-            else:
-                cost_deducted = cost_credits
-                refreshed_human = self.storage.get_human(user_id)
-                if refreshed_human:
-                    human = refreshed_human
-
-        if authorized and consume_challenge and challenge_id:
-            now = time.time()
-            self.storage.update_challenge_status(
-                challenge_id=str(challenge_id),
-                status=ChallengeStatus.CONSUMED,
-                resolved_at=now,
-                reason="Consumed via dt.evaluate()",
+            # Cryptographically log evaluation decision
+            self.ledger.append(
+                event_type="EVALUATION_DECISION",
+                entity_id=f"{user_id}:{agent_id}",
+                payload={
+                    "authorized": authorized,
+                    "composite_score": composite,
+                    "cost_deducted": cost_deducted,
+                    "nonce": nonce,
+                    "expires_at": expires_at,
+                    "reasons": reasons,
+                },
             )
 
-        timestamp = time.time()
-        nonce = uuid.uuid4().hex[:16]
-        expires_at = timestamp + self.verdict_ttl_seconds
-        raw_preimage = f"{user_id}:{agent_id}:{nonce}:{timestamp:.4f}:{authorized}:{self.secret_key}"
-        signature = hashlib.sha256(raw_preimage.encode("utf-8")).hexdigest()
-
-        verdict = TrustVerdict(
-            authorized=authorized,
-            composite_score=composite,
-            human_score=human.social_credit,
-            agent_score=agent.trust_score,
-            agent_status=agent.status,
-            cost_deducted=cost_deducted,
-            reasons=reasons,
-            timestamp=timestamp,
-            nonce=nonce,
-            expires_at=expires_at,
-            signature=signature,
-            requires_human_approval=(require_human_confirmation and not challenge_id),
-            challenge=challenge_obj,
-        )
-
-        # Cryptographically log evaluation decision
-        self.ledger.append(
-            event_type="EVALUATION_DECISION",
-            entity_id=f"{user_id}:{agent_id}",
-            payload={
-                "authorized": authorized,
-                "composite_score": composite,
-                "cost_deducted": cost_deducted,
-                "nonce": nonce,
-                "expires_at": expires_at,
-                "reasons": reasons,
-            },
-        )
-
-        return verdict
+            return verdict
 
     def verify_verdict(
         self,
@@ -667,12 +739,43 @@ class DualTrust:
 
         if inspect.iscoroutinefunction(func):
             async def _async_exec() -> Any:
-                res = await func(*args, **kwargs)
+                try:
+                    res = await func(*args, **kwargs)
+                except Exception as exc:
+                    if verdict.cost_deducted > 0:
+                        with self._get_user_lock(user_id):
+                            self.storage.add_credits(user_id=user_id, amount=verdict.cost_deducted)
+                            self.ledger.append(
+                                event_type="EXECUTION_ROLLBACK_REFUND",
+                                entity_id=user_id,
+                                payload={
+                                    "amount": verdict.cost_deducted,
+                                    "reason": f"Execution failed: {type(exc).__name__}: {str(exc)}",
+                                    "agent_id": agent_id,
+                                },
+                            )
+                    raise
                 if self.watchdog is not None:
                     self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=verdict.cost_deducted)
                 return res
             return _async_exec()
-        res = func(*args, **kwargs)
+
+        try:
+            res = func(*args, **kwargs)
+        except Exception as exc:
+            if verdict.cost_deducted > 0:
+                with self._get_user_lock(user_id):
+                    self.storage.add_credits(user_id=user_id, amount=verdict.cost_deducted)
+                    self.ledger.append(
+                        event_type="EXECUTION_ROLLBACK_REFUND",
+                        entity_id=user_id,
+                        payload={
+                            "amount": verdict.cost_deducted,
+                            "reason": f"Execution failed: {type(exc).__name__}: {str(exc)}",
+                            "agent_id": agent_id,
+                        },
+                    )
+            raise
         if self.watchdog is not None:
             self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=verdict.cost_deducted)
         return res
@@ -714,7 +817,23 @@ class DualTrust:
             entity_id=agent_id,
             payload={"tool_name": tool_name, "cost_credits": cost_credits},
         )
-        res = tool_callable(**arguments)
+        try:
+            res = tool_callable(**arguments)
+        except Exception as exc:
+            if verdict.cost_deducted > 0:
+                with self._get_user_lock(user_id):
+                    self.storage.add_credits(user_id=user_id, amount=verdict.cost_deducted)
+                    self.ledger.append(
+                        event_type="EXECUTION_ROLLBACK_REFUND",
+                        entity_id=user_id,
+                        payload={
+                            "amount": verdict.cost_deducted,
+                            "reason": f"Tool execution failed: {type(exc).__name__}: {str(exc)}",
+                            "agent_id": agent_id,
+                            "tool_name": tool_name,
+                        },
+                    )
+            raise
         if self.watchdog is not None:
             self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=verdict.cost_deducted)
         return res
@@ -820,7 +939,23 @@ class DualTrust:
                                 entity_id=str(challenge_id),
                                 payload={"action_name": func.__name__, "user_id": str(user_id), "agent_id": str(agent_id), "consumed_at": now},
                             )
-                            res = await func(*args, **kwargs)
+                            try:
+                                res = await func(*args, **kwargs)
+                            except Exception as exc:
+                                if cost_credits > 0 and deduct_cost:
+                                    with self._get_user_lock(str(user_id)):
+                                        self.storage.add_credits(user_id=str(user_id), amount=cost_credits)
+                                        self.ledger.append(
+                                            event_type="EXECUTION_ROLLBACK_REFUND",
+                                            entity_id=str(user_id),
+                                            payload={
+                                                "amount": cost_credits,
+                                                "reason": f"Gated action failed: {type(exc).__name__}: {str(exc)}",
+                                                "agent_id": str(agent_id),
+                                                "action_name": func.__name__,
+                                            },
+                                        )
+                                raise
                             if self.watchdog is not None:
                                 self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=cost_credits)
                             return res
@@ -837,7 +972,23 @@ class DualTrust:
                     if not verdict.authorized:
                         self._raise_verdict_error(verdict)
 
-                    res = await func(*args, **kwargs)
+                    try:
+                        res = await func(*args, **kwargs)
+                    except Exception as exc:
+                        if verdict.cost_deducted > 0:
+                            with self._get_user_lock(str(user_id)):
+                                self.storage.add_credits(user_id=str(user_id), amount=verdict.cost_deducted)
+                                self.ledger.append(
+                                    event_type="EXECUTION_ROLLBACK_REFUND",
+                                    entity_id=str(user_id),
+                                    payload={
+                                        "amount": verdict.cost_deducted,
+                                        "reason": f"Gated action failed: {type(exc).__name__}: {str(exc)}",
+                                        "agent_id": str(agent_id),
+                                        "action_name": func.__name__,
+                                    },
+                                )
+                        raise
                     if self.watchdog is not None:
                         self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=verdict.cost_deducted)
                     return res
@@ -924,7 +1075,23 @@ class DualTrust:
                                 entity_id=str(challenge_id),
                                 payload={"action_name": func.__name__, "user_id": str(user_id), "agent_id": str(agent_id), "consumed_at": now},
                             )
-                            res = func(*args, **kwargs)
+                            try:
+                                res = func(*args, **kwargs)
+                            except Exception as exc:
+                                if cost_credits > 0 and deduct_cost:
+                                    with self._get_user_lock(str(user_id)):
+                                        self.storage.add_credits(user_id=str(user_id), amount=cost_credits)
+                                        self.ledger.append(
+                                            event_type="EXECUTION_ROLLBACK_REFUND",
+                                            entity_id=str(user_id),
+                                            payload={
+                                                "amount": cost_credits,
+                                                "reason": f"Gated action failed: {type(exc).__name__}: {str(exc)}",
+                                                "agent_id": str(agent_id),
+                                                "action_name": func.__name__,
+                                            },
+                                        )
+                                raise
                             if self.watchdog is not None:
                                 self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=cost_credits)
                             return res
@@ -941,7 +1108,23 @@ class DualTrust:
                     if not verdict.authorized:
                         self._raise_verdict_error(verdict)
 
-                    res = func(*args, **kwargs)
+                    try:
+                        res = func(*args, **kwargs)
+                    except Exception as exc:
+                        if verdict.cost_deducted > 0:
+                            with self._get_user_lock(str(user_id)):
+                                self.storage.add_credits(user_id=str(user_id), amount=verdict.cost_deducted)
+                                self.ledger.append(
+                                    event_type="EXECUTION_ROLLBACK_REFUND",
+                                    entity_id=str(user_id),
+                                    payload={
+                                        "amount": verdict.cost_deducted,
+                                        "reason": f"Gated action failed: {type(exc).__name__}: {str(exc)}",
+                                        "agent_id": str(agent_id),
+                                        "action_name": func.__name__,
+                                    },
+                                )
+                        raise
                     if self.watchdog is not None:
                         self.watchdog.record_call_success(agent_id=str(agent_id), cost_credits=verdict.cost_deducted)
                     return res
@@ -1146,6 +1329,7 @@ class DualTrust:
             quarantine_proximity=quarantine_buffer,
             active_reflections_count=len(reflections),
             last_updated=agent.last_updated,
+            minor_infractions=agent.minor_infractions,
         )
 
     def preflight_check(
@@ -1500,6 +1684,14 @@ class DualTrust:
         current_time: Optional[float] = None,
     ) -> TrustVerdict:
         """Evaluate and authorize a sub-agent execution under an A2A delegation mandate with dual-pool deduction."""
+        if not isinstance(cost_credits, (int, float)):
+            raise ValueError(f"cost_credits must be a numeric integer or float, got {type(cost_credits).__name__}")
+        if isinstance(cost_credits, float) and (math.isnan(cost_credits) or math.isinf(cost_credits)):
+            raise ValueError("cost_credits cannot be NaN or infinite.")
+        if cost_credits < 0:
+            raise ValueError(f"cost_credits must be non-negative, got {cost_credits}")
+        cost_credits = int(cost_credits)
+
         now = current_time if current_time is not None else time.time()
         mandate = self.mandate_manager.get_mandate(mandate_id)
         if not mandate:
@@ -1544,56 +1736,57 @@ class DualTrust:
                 f"Delegated action blocked: sub-agent '{mandate.sub_agent_id}' is quarantined as rogue."
             )
 
-        # 3. Check Human Principal Standing & Credits Pool
-        human = self.get_or_create_human(mandate.user_id)
-        if not human.is_active:
-            raise AuthorizationDeniedError(
-                f"Delegated action blocked: human principal '{mandate.user_id}' is inactive or banned."
-            )
-        if cost_credits > 0 and human.credits_balance < cost_credits:
-            raise InsufficientCreditsError(
-                f"Delegated action blocked: human principal '{mandate.user_id}' has insufficient spendable credits "
-                f"({cost_credits} required, {human.credits_balance} available)."
-            )
+        with self._get_user_lock(mandate.user_id):
+            # 3. Check Human Principal Standing & Credits Pool
+            human = self.get_or_create_human(mandate.user_id)
+            if not human.is_active:
+                raise AuthorizationDeniedError(
+                    f"Delegated action blocked: human principal '{mandate.user_id}' is inactive or banned."
+                )
+            if cost_credits > 0 and human.credits_balance < cost_credits:
+                raise InsufficientCreditsError(
+                    f"Delegated action blocked: human principal '{mandate.user_id}' has insufficient spendable credits "
+                    f"({cost_credits} required, {human.credits_balance} available)."
+                )
 
-        # 4. Watchdog Inspection on Sub-Agent
-        if self.watchdog is not None:
-            watchdog_verdict = self.watchdog.inspect_pre_call(
-                agent_id=mandate.sub_agent_id,
+            # 4. Watchdog Inspection on Sub-Agent
+            if self.watchdog is not None:
+                watchdog_verdict = self.watchdog.inspect_pre_call(
+                    agent_id=mandate.sub_agent_id,
+                    cost_credits=cost_credits,
+                    current_time=now,
+                )
+                if not watchdog_verdict.action_permitted:
+                    if watchdog_verdict.auto_quarantined:
+                        self.quarantine_agent(
+                            agent_id=mandate.sub_agent_id,
+                            reason=f"Watchdog auto-quarantine during delegated execution: {watchdog_verdict.reason}",
+                        )
+                        raise AgentQuarantinedError(
+                            f"Sub-agent '{mandate.sub_agent_id}' auto-quarantined: {watchdog_verdict.reason}"
+                        )
+                    raise VelocityLimitExceededError(
+                        f"Sub-agent velocity limit exceeded: {watchdog_verdict.reason}"
+                    )
+
+            # 5. Atomic Dual-Pool Deduction
+            # Deduct from mandate budget
+            self.mandate_manager.validate_and_consume(
+                mandate_id=mandate_id,
+                action=action,
                 cost_credits=cost_credits,
                 current_time=now,
             )
-            if not watchdog_verdict.action_permitted:
-                if watchdog_verdict.auto_quarantined:
-                    self.quarantine_agent(
-                        agent_id=mandate.sub_agent_id,
-                        reason=f"Watchdog auto-quarantine during delegated execution: {watchdog_verdict.reason}",
-                    )
-                    raise AgentQuarantinedError(
-                        f"Sub-agent '{mandate.sub_agent_id}' auto-quarantined: {watchdog_verdict.reason}"
-                    )
-                raise VelocityLimitExceededError(
-                    f"Sub-agent velocity limit exceeded: {watchdog_verdict.reason}"
-                )
 
-        # 5. Atomic Dual-Pool Deduction
-        # Deduct from mandate budget
-        self.mandate_manager.validate_and_consume(
-            mandate_id=mandate_id,
-            action=action,
-            cost_credits=cost_credits,
-            current_time=now,
-        )
-
-        # Deduct from human principal's credits pool
-        if cost_credits > 0:
-            deducted = self.storage.deduct_credits(user_id=mandate.user_id, amount=cost_credits)
-            if not deducted:
-                # Compensating transaction: Rollback mandate consumption across hierarchy
-                self.mandate_manager.rollback_consumption(mandate_id=mandate_id, cost_credits=cost_credits)
-                raise InsufficientCreditsError(
-                    f"Failed to deduct {cost_credits} credits from human principal '{mandate.user_id}'."
-                )
+            # Deduct from human principal's credits pool
+            if cost_credits > 0:
+                deducted = self.storage.deduct_credits(user_id=mandate.user_id, amount=cost_credits)
+                if not deducted:
+                    # Compensating transaction: Rollback mandate consumption across hierarchy
+                    self.mandate_manager.rollback_consumption(mandate_id=mandate_id, cost_credits=cost_credits)
+                    raise InsufficientCreditsError(
+                        f"Failed to deduct {cost_credits} credits from human principal '{mandate.user_id}'."
+                    )
 
         nonce = uuid.uuid4().hex[:16]
         raw_preimage = f"{mandate.user_id}:{mandate.sub_agent_id}:{nonce}:{now:.4f}:True:{self.secret_key}"

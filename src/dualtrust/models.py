@@ -61,6 +61,8 @@ class AgentProfile:
     status: AgentStatus = AgentStatus.PROBATION
     violations_count: int = 0
     consecutive_clean_actions: int = 0
+    minor_infractions: int = 0
+    lifetime_minor_infractions: int = 0
     last_updated: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -215,6 +217,7 @@ class AgentStanding:
     quarantine_proximity: float
     active_reflections_count: int
     last_updated: float
+    minor_infractions: int = 0
 
     def describe(self) -> str:
         """Produce a human-readable standing summary for LLM introspection."""
