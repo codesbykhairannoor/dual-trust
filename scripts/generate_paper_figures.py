@@ -29,7 +29,7 @@ plt.rcParams.update({
 # -------------------------------------------------------------
 # Figure 1: Containment Dynamics under Real ReputationMath Engine
 # -------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(6, 3.5), dpi=300)
+fig, ax = plt.subplots(figsize=(6.2, 3.8), dpi=300)
 steps = np.arange(1, 101)
 engine = ReputationMath()
 
@@ -40,7 +40,7 @@ for t in steps:
     engine.apply_positive_feedback(p_benign, weight=0.2)
     benign_scores.append(p_benign.trust_score)
 
-# 2. Salami Slicer: established agent (alpha=10, beta=1 -> T=0.91), attempts infraction every 5 steps
+# 2. Salami Slicer: established agent (alpha=10, beta=1 -> T=0.91), attempts infraction every 5 steps (4 clean + 1 infraction)
 p_salami = AgentProfile(agent_id='salami', alpha=10.0, beta=1.0)
 salami_scores = []
 for t in steps:
@@ -50,30 +50,32 @@ for t in steps:
         engine.apply_positive_feedback(p_salami, weight=0.2)
     salami_scores.append(p_salami.trust_score)
 
-# 3. Trojan Sleeper: 39 clean actions, then catastrophic exploit (severity=5.0) at step 40
+# 3. Trojan Sleeper: 39 clean actions (T=0.898), then critical protocol trespass (severity=5.0) at step 40
 p_trojan = AgentProfile(agent_id='trojan', alpha=1.0, beta=1.0)
 trojan_scores = []
 for t in steps:
     if t < 40:
         engine.apply_positive_feedback(p_trojan, weight=0.2)
     elif t == 40:
-        engine.apply_violation_penalty(p_trojan, ViolationType.UNAUTHORIZED_ACTION, severity=5.0, reporter_credibility=1.0)
+        engine.apply_violation_penalty(p_trojan, ViolationType.PROTOCOL_TRESPASS, severity=5.0, reporter_credibility=1.0)
     else:
-        # Quarantined post-exploit
+        # Quarantined post-exploit - operational containment freezes further tool calls
         pass
     trojan_scores.append(p_trojan.trust_score)
 
-ax.plot(steps, benign_scores, label='Benign Worker Agent (Cooperative)', color='#1b7837', linestyle='-')
-ax.plot(steps, salami_scores, label='Salami-Slicing Attacker (5:1 Exploit Cycle)', color='#d73027', linestyle='--')
-ax.plot(steps, trojan_scores, label='Trojan Sleeper Agent (Post-Exploit Quarantine)', color='#762a83', linestyle=':')
+ax.plot(steps, benign_scores, label='Benign Worker Agent (Compliant)', color='#1b7837', linestyle='-')
+ax.plot(steps, salami_scores, label='Salami-Slicing Attacker (4:1 Exploit Cycle, sev=2.0)', color='#d73027', linestyle='--')
+ax.plot(steps, trojan_scores, label='Trojan Sleeper Agent (Critical Trespass at t=40, sev=5.0)', color='#762a83', linestyle=':')
 
-ax.axhline(0.40, color='gray', linestyle='-.', alpha=0.7, label='Quarantine Threshold (tau=0.40)')
+ax.axhline(0.40, color='#fdb863', linestyle='-.', alpha=0.9, label=r'Restricted Boundary ($\tau_{\mathrm{restr}} = 0.40$)')
+ax.axhline(0.20, color='#b2182b', linestyle='--', alpha=0.9, label=r'Quarantine Threshold ($\tau_{\mathrm{quar}} = 0.20$)')
+
 ax.set_xlabel('Interaction Step Index (t)')
 ax.set_ylabel('Bayesian Trust Standing T(t)')
-ax.set_title('Figure 1: Containment Dynamics under Adversarial Salami-Slicing')
+ax.set_title('Figure 1: Containment Dynamics under Adversarial Salami-Slicing & Trojan Exploit')
 ax.set_ylim(0.0, 1.05)
 ax.set_xlim(1, 100)
-ax.legend(loc='lower left', frameon=True)
+ax.legend(loc='upper right', frameon=True, fontsize=8)
 ax.grid(True)
 plt.tight_layout()
 plt.savefig(r"d:\pythonlibrary\paper\figures\figure1_salami_slicing.png", dpi=300)
@@ -113,17 +115,18 @@ print("Figure 2 generated successfully.")
 # -------------------------------------------------------------
 # Figure 3: Execution Latency Distribution (Real Benchmark Data)
 # -------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(6.5, 3.5), dpi=300)
+fig, ax = plt.subplots(figsize=(7.2, 3.8), dpi=300)
 systems = [
-    'DualTrust\n(RAM)',
+    'DualTrust\n(RAM Core)',
+    'DualTrust\n(@gate Sync)',
     'DualTrust\n(SQLite WAL)',
     'Static\nRBAC',
     'Guardrails\nAI',
     'NeMo\nGuardrails',
     'Llama Guard 3\n(8B)'
 ]
-latencies_ms = [0.04710, 0.15580, 0.01120, 2.85, 390.0, 810.0] # in milliseconds
-colors = ['#2ca02c', '#66c2a5', '#1f77b4', '#9e9ac8', '#ff7f0e', '#d62728']
+latencies_ms = [0.04710, 0.08830, 0.15580, 0.01120, 2.85, 390.0, 810.0] # in milliseconds
+colors = ['#2ca02c', '#31a354', '#74c476', '#1f77b4', '#9e9ac8', '#ff7f0e', '#d62728']
 
 bars = ax.bar(systems, latencies_ms, color=colors, width=0.55, edgecolor='black', linewidth=0.8)
 ax.set_yscale('log')
@@ -141,10 +144,10 @@ for bar in bars:
         text = f"{yval:.2f} ms"
     else:
         text = f"{yval:.0f} ms"
-    ax.text(bar.get_x() + bar.get_width()/2.0, yval * 1.4, text, ha='center', va='bottom', fontsize=8.5, fontweight='bold')
+    ax.text(bar.get_x() + bar.get_width()/2.0, yval * 1.35, text, ha='center', va='bottom', fontsize=8.0, fontweight='bold')
 
 plt.tight_layout()
 plt.savefig(r"d:\pythonlibrary\paper\figures\figure3_latency_comparison.png", dpi=300)
 plt.savefig(r"d:\pythonlibrary\paper\figures\figure3_latency_comparison.pdf")
 plt.close()
-print("Figure 3 generated successfully with honest dual-tier numbers.")
+print("Figure 3 generated successfully with honest full-stack numbers.")
