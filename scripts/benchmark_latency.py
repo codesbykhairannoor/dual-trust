@@ -64,7 +64,7 @@ def compute_statistics(latencies_ns: List[int]) -> Dict[str, Any]:
     }
 
 
-def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
+def run_benchmark(iterations: int = 10000) -> Dict[str, Any]:
     """Execute rigorous microsecond latency benchmarking across all critical paths."""
     print(f"[*] Starting DualTrust microsecond benchmark (N = {iterations} iterations)...")
 
@@ -82,7 +82,7 @@ def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
         dt.evaluate(user_id=user_id, agent_id=agent_id, cost_credits=1, deduct_cost=False)
 
     # -------------------------------------------------------------------------
-    # Benchmark 1: Core Policy Evaluation (dt.evaluate)
+    # Benchmark 1: Core Policy Evaluation (dt.evaluate - In-Memory Fast Tier)
     # -------------------------------------------------------------------------
     latencies_eval: List[int] = []
     for _ in range(iterations):
@@ -124,7 +124,37 @@ def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
     latencies_gate_async = asyncio.run(run_async_bench())
 
     # -------------------------------------------------------------------------
-    # Benchmark 4: Cryptographic HMAC Verdict Receipt Verification
+    # Benchmark 4: SQLite WAL Persistent Policy Evaluation Tier
+    # -------------------------------------------------------------------------
+    from dualtrust.storage import SQLiteStorage
+    import tempfile
+
+    sqlite_db_file = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    sqlite_db_path = sqlite_db_file.name
+    sqlite_db_file.close()
+
+    sqlite_storage = SQLiteStorage(db_path=sqlite_db_path)
+    dt_sqlite = DualTrust(storage=sqlite_storage)
+    dt_sqlite.register_human(user_id="bench_sqlite_user", social_credit=850, credits_balance=100000)
+    dt_sqlite.register_agent(agent_id="bench_sqlite_agent", initial_trust=0.80)
+
+    # 1,000 physical disk transactions on SQLite WAL
+    sqlite_iterations = min(1000, iterations)
+    latencies_sqlite_wal: List[int] = []
+    for _ in range(sqlite_iterations):
+        t0 = time.perf_counter_ns()
+        _ = dt_sqlite.evaluate(user_id="bench_sqlite_user", agent_id="bench_sqlite_agent", cost_credits=1, deduct_cost=True)
+        t1 = time.perf_counter_ns()
+        latencies_sqlite_wal.append(t1 - t0)
+
+    sqlite_storage.close()
+    try:
+        os.remove(sqlite_db_path)
+    except OSError:
+        pass
+
+    # -------------------------------------------------------------------------
+    # Benchmark 5: Cryptographic HMAC Verdict Receipt Verification
     # -------------------------------------------------------------------------
     verdict = dt.evaluate(user_id=user_id, agent_id=agent_id)
     latencies_hmac: List[int] = []
@@ -135,7 +165,7 @@ def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
         latencies_hmac.append(t1 - t0)
 
     # -------------------------------------------------------------------------
-    # Benchmark 5: RFC 6962 Merkle Tree Inclusion Proof Verification
+    # Benchmark 6: RFC 6962 Merkle Tree Inclusion Proof Verification
     # -------------------------------------------------------------------------
     # Build tree with 128 audit leaves
     leaves = [f"{i:064x}" for i in range(128)]
@@ -153,7 +183,7 @@ def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
         latencies_merkle.append(t1 - t0)
 
     # -------------------------------------------------------------------------
-    # Benchmark 6: Anthropic MCP Gateway Tool Interception & Dispatch
+    # Benchmark 7: Anthropic MCP Gateway Tool Interception & Dispatch
     # -------------------------------------------------------------------------
     from dualtrust.adapters.mcp import DualTrustMCPGateway
 
@@ -173,9 +203,10 @@ def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
         latencies_mcp.append(t1 - t0)
 
     results = {
-        "evaluate_policy": compute_statistics(latencies_eval),
+        "evaluate_policy_in_memory": compute_statistics(latencies_eval),
         "gate_decorator_sync": compute_statistics(latencies_gate_sync),
         "gate_decorator_async": compute_statistics(latencies_gate_async),
+        "evaluate_policy_sqlite_wal": compute_statistics(latencies_sqlite_wal),
         "hmac_receipt_verification": compute_statistics(latencies_hmac),
         "merkle_inclusion_proof_verification": compute_statistics(latencies_merkle),
         "mcp_gateway_tool_dispatch": compute_statistics(latencies_mcp),
@@ -243,4 +274,4 @@ def run_benchmark(iterations: int = 5000) -> Dict[str, Any]:
 
 
 if __name__ == "__main__":
-    run_benchmark(iterations=5000)
+    run_benchmark(iterations=10000)

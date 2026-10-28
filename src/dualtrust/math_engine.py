@@ -85,15 +85,20 @@ class ReputationMath:
         if delta_seconds <= 0:
             return profile.trust_score
 
+        # Critical Safety Actuator Exemption: Safety-critical equipment does not passively decay during dormant periods
+        is_exempt = getattr(profile, "is_safety_critical", False) or profile.metadata.get("is_safety_critical", False) or profile.metadata.get("decay_exempt", False)
+        if is_exempt:
+            profile.trust_score = self.expected_trust(profile.alpha, profile.beta)
+            profile.last_updated = now
+            return profile.trust_score
+
         # Half-life decay factor: 2 ^ (-delta_t / half_life)
         decay_ratio = math.pow(0.5, delta_seconds / self.half_life_seconds)
 
-        # Decay alpha and beta evidence above uninformative baseline prior of 1.0
+        # Asymmetric Memory Invariant: positive standing alpha decays continuously toward uninformative baseline (1.0),
+        # but negative malfeasance beta does NOT decay passively.
         e_alpha = max(0.0, profile.alpha - 1.0)
-        e_beta = max(0.0, profile.beta - 1.0)
-
         profile.alpha = 1.0 + (e_alpha * decay_ratio)
-        profile.beta = 1.0 + (e_beta * decay_ratio)
 
         profile.trust_score = self.expected_trust(profile.alpha, profile.beta)
         if profile.status != AgentStatus.QUARANTINED:
@@ -141,6 +146,9 @@ class ReputationMath:
 
         severity = max(1.0, min(5.0, severity))
         credibility = max(0.0, min(1.0, reporter_credibility))
+        # Enforce minimum operational credibility floor for non-zero reported severity to prevent adversarial nullification
+        if credibility > 0.0:
+            credibility = max(0.05, credibility)
 
         # Sybil Defamation Defense: Quarantined or untrusted reporters (< 0.20) cannot
         # unilaterally slash a verified entity without independent corroboration
@@ -156,6 +164,7 @@ class ReputationMath:
         if is_untrusted_reporter:
             effective_exponent = 1.0
             profile.consecutive_clean_actions = 0
+            strike_base = 1
         elif is_minor_glitch:
             profile.minor_infractions += 1
             profile.lifetime_minor_infractions += 1
@@ -163,23 +172,28 @@ class ReputationMath:
             lifetime_strikes = profile.lifetime_minor_infractions // self.minor_infraction_threshold
             if profile.minor_infractions >= self.minor_infraction_threshold or lifetime_strikes > profile.violations_count:
                 profile.violations_count = max(profile.violations_count + 1, lifetime_strikes)
+                profile.lifetime_violations_count = max(getattr(profile, "lifetime_violations_count", 0) + 1, lifetime_strikes)
                 profile.minor_infractions = 0
                 effective_exponent = self.slashing_exponent
+                strike_base = max(1, getattr(profile, "lifetime_violations_count", profile.violations_count))
             else:
                 effective_exponent = 1.0
+                strike_base = 1
         else:
             profile.violations_count += 1
+            profile.lifetime_violations_count = getattr(profile, "lifetime_violations_count", 0) + 1
             profile.consecutive_clean_actions = 0
             effective_exponent = self.slashing_exponent
+            strike_base = max(1, getattr(profile, "lifetime_violations_count", profile.violations_count))
 
         # Effective severity discounted quadratically by reporter credibility (EigenTrust standard)
         effective_severity = severity * math.pow(credibility, 2)
 
-        # Exponential rogue slashing formula: Delta_beta = kp * effective_severity * (violations ^ gamma)
+        # Exponential rogue slashing formula: Delta_beta = kp * effective_severity * (lifetime_violations ^ gamma)
         penalty_delta = (
             self.penalty_multiplier
             * effective_severity
-            * math.pow(max(1, profile.violations_count), effective_exponent)
+            * math.pow(strike_base, effective_exponent)
         )
 
         # Critical protocol trespass carries a hard multiplier, but ONLY when reported by a credible entity

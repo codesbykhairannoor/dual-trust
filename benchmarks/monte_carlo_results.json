@@ -1,12 +1,12 @@
 {
-  "timestamp": 1792942789.6332483,
-  "total_elapsed_seconds": 0.514,
+  "timestamp": 1793171503.5060773,
+  "total_elapsed_seconds": 1.464,
   "benign_baseline": {
     "population_name": "Benign Baseline (95% Compliant, 5% Noise)",
     "total_agents": 50,
     "total_interactions": 10000,
-    "mean_final_trust": 0.8477,
-    "std_dev_trust": 0.0338,
+    "mean_final_trust": 0.6272,
+    "std_dev_trust": 0.1736,
     "quarantine_rate": 0.0,
     "successful_exploits": 0,
     "blocked_exploits": 0,

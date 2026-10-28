@@ -82,6 +82,74 @@ class TestAdvancedFeatures(unittest.TestCase):
         self.assertTrue(is_valid)
         self.assertIsNone(err)
 
+    def test_lifetime_violations_strictly_monotonic(self) -> None:
+        """Sustained clean recovery must NOT decrement monotonic lifetime violation accumulator."""
+        rmath = ReputationMath(recovery_clean_window=5)
+        profile = AgentProfile(agent_id="recovering_agent", alpha=5.0, beta=1.0)
+
+        # Apply 2 formal strikes
+        rmath.apply_violation_penalty(profile, ViolationType.PROTOCOL_TRESPASS, severity=3.0)
+        rmath.apply_violation_penalty(profile, ViolationType.PROTOCOL_TRESPASS, severity=3.0)
+        self.assertEqual(profile.lifetime_violations_count, 2)
+        self.assertEqual(profile.violations_count, 2)
+
+        # Execute 10 consecutive clean actions (exceeding recovery window of 5)
+        for _ in range(10):
+            rmath.apply_positive_feedback(profile, weight=1.0)
+
+        # Operational violations count decays, but monotonic lifetime accumulator remains exactly 2
+        self.assertLess(profile.violations_count, 2)
+        self.assertEqual(profile.lifetime_violations_count, 2)
+
+    def test_asymmetric_beta_no_passive_decay(self) -> None:
+        """Negative evidence beta must NOT passively decay over elapsed time."""
+        rmath = ReputationMath(half_life_seconds=86400.0)
+        profile = AgentProfile(agent_id="penalized_agent", alpha=5.0, beta=10.0, last_updated=1000.0)
+
+        # After 2 half-lives (2 days later)
+        rmath.apply_time_decay(profile, current_time=1000.0 + 2 * 86400.0)
+        # alpha decays toward 1.0
+        self.assertLess(profile.alpha, 5.0)
+        # beta must strictly remain 10.0
+        self.assertEqual(profile.beta, 10.0)
+
+    def test_safety_critical_actuator_exemption(self) -> None:
+        """Safety-critical emergency equipment does not lose trust during dormant periods."""
+        rmath = ReputationMath(half_life_seconds=86400.0)
+        profile = AgentProfile(
+            agent_id="fire_suppression_valve",
+            alpha=9.0,
+            beta=1.0,
+            is_safety_critical=True,
+            last_updated=1000.0,
+        )
+        # 180 days (6 months) later
+        rmath.apply_time_decay(profile, current_time=1000.0 + 180 * 86400.0)
+        self.assertEqual(profile.alpha, 9.0)
+        self.assertAlmostEqual(profile.trust_score, 0.90, places=2)
+
+    def test_async_cancellation_refund(self) -> None:
+        """Async tool cancellation must trigger compensating credit refund."""
+        import asyncio
+
+        dt = DualTrust()
+        dt.register_human("user_cancel", social_credit=800, credits_balance=100)
+        dt.register_agent("worker_cancel", initial_trust=0.90)
+
+        @dt.gate(cost_credits=25)
+        async def cancelled_tool(user_id: str, agent_id: str) -> None:
+            raise asyncio.CancelledError("Client disconnected")
+
+        async def run_test() -> None:
+            with self.assertRaises(asyncio.CancelledError):
+                await cancelled_tool(user_id="user_cancel", agent_id="worker_cancel")
+
+        asyncio.run(run_test())
+
+        # Balance must be exactly 100 (25 refunded)
+        human = dt.get_or_create_human("user_cancel")
+        self.assertEqual(human.credits_balance, 100)
+
 
 if __name__ == "__main__":
     unittest.main()

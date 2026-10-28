@@ -741,7 +741,7 @@ class DualTrust:
             async def _async_exec() -> Any:
                 try:
                     res = await func(*args, **kwargs)
-                except Exception as exc:
+                except BaseException as exc:
                     if verdict.cost_deducted > 0:
                         with self._get_user_lock(user_id):
                             self.storage.add_credits(user_id=user_id, amount=verdict.cost_deducted)
@@ -762,7 +762,7 @@ class DualTrust:
 
         try:
             res = func(*args, **kwargs)
-        except Exception as exc:
+        except BaseException as exc:
             if verdict.cost_deducted > 0:
                 with self._get_user_lock(user_id):
                     self.storage.add_credits(user_id=user_id, amount=verdict.cost_deducted)
@@ -819,7 +819,7 @@ class DualTrust:
         )
         try:
             res = tool_callable(**arguments)
-        except Exception as exc:
+        except BaseException as exc:
             if verdict.cost_deducted > 0:
                 with self._get_user_lock(user_id):
                     self.storage.add_credits(user_id=user_id, amount=verdict.cost_deducted)
@@ -941,7 +941,7 @@ class DualTrust:
                             )
                             try:
                                 res = await func(*args, **kwargs)
-                            except Exception as exc:
+                            except BaseException as exc:
                                 if cost_credits > 0 and deduct_cost:
                                     with self._get_user_lock(str(user_id)):
                                         self.storage.add_credits(user_id=str(user_id), amount=cost_credits)
@@ -974,7 +974,7 @@ class DualTrust:
 
                     try:
                         res = await func(*args, **kwargs)
-                    except Exception as exc:
+                    except BaseException as exc:
                         if verdict.cost_deducted > 0:
                             with self._get_user_lock(str(user_id)):
                                 self.storage.add_credits(user_id=str(user_id), amount=verdict.cost_deducted)
@@ -1077,7 +1077,7 @@ class DualTrust:
                             )
                             try:
                                 res = func(*args, **kwargs)
-                            except Exception as exc:
+                            except BaseException as exc:
                                 if cost_credits > 0 and deduct_cost:
                                     with self._get_user_lock(str(user_id)):
                                         self.storage.add_credits(user_id=str(user_id), amount=cost_credits)
@@ -1110,7 +1110,7 @@ class DualTrust:
 
                     try:
                         res = func(*args, **kwargs)
-                    except Exception as exc:
+                    except BaseException as exc:
                         if verdict.cost_deducted > 0:
                             with self._get_user_lock(str(user_id)):
                                 self.storage.add_credits(user_id=str(user_id), amount=verdict.cost_deducted)

@@ -60,9 +60,11 @@ class AgentProfile:
     trust_score: float = 0.5
     status: AgentStatus = AgentStatus.PROBATION
     violations_count: int = 0
+    lifetime_violations_count: int = 0
     consecutive_clean_actions: int = 0
     minor_infractions: int = 0
     lifetime_minor_infractions: int = 0
+    is_safety_critical: bool = False
     last_updated: float = field(default_factory=time.time)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
