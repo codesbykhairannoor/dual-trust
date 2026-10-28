@@ -76,3 +76,4 @@ with open('paper/jair_main.tex', 'w', encoding='utf-8') as f:
     f.write(jair_text)
 
 print(f"SUCCESS: Created paper/jair_main.tex ({len(jair_text)} bytes)!")
+

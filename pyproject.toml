@@ -11,7 +11,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "Khairan Noor", email = "khairking6@gmail.com" }
+    { name = "Khairan Noor", email = "khairan.noor.f@students.esqbs.ac.id" }
 ]
 keywords = [
     "ai-agents",
