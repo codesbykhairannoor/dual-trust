@@ -250,6 +250,7 @@ A salami-slicing attack cycle $\mathcal{C}(k)$ consists of $k \in \mathbb{N}$ co
 \end{definition}
 
 \begin{theorem}[Non-Viability of Salami-Slicing]
+\label{thm:salami}
 Let an adversary execute repeated cycles $\mathcal{C}_1(k), \mathcal{C}_2(k), \dots, \mathcal{C}_N(k)$. If the slashing exponent satisfies $\gamma > 1$, then for any finite gains $g_{\text{clean}}, g_{\text{exploit}} < \infty$, the expected cumulative profit $\Pi(N)$ satisfies:
 \begin{equation}
 \lim_{N \to \infty} \Pi(N) = -\infty
@@ -290,6 +291,7 @@ Therefore, any intermittent salami-slicing attack strategy leads to guaranteed e
 \subsection{Proof of Sybil Defamation Immunity}
 
 \begin{theorem}[Immunity Against Unverified Swarms]
+\label{thm:sybil}
 Let $a_{\text{tgt}}$ be an established agent with $\text{Status}(a_{\text{tgt}}) = \text{VERIFIED}$. Let an adversary deploy an arbitrary number $M$ of collusive bot identities $\{b_1, b_2, \dots, b_M\}$, all having $\text{Status}(b_j) = \text{PROBATION}$. If all $M$ bots simultaneously submit maximum-severity violation reports ($\text{sev} = 1.0$) against $a_{\text{tgt}}$, the resulting trust score degradation is identically zero:
 \begin{equation}
 T_{a_{\text{tgt}}}(t + \Delta t) = T_{a_{\text{tgt}}}(t)
