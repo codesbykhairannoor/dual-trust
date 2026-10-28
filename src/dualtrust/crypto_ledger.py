@@ -103,9 +103,12 @@ class MerkleTree:
             next_layer: List[str] = []
             for i in range(0, len(current_layer), 2):
                 left = current_layer[i]
-                # If odd number of nodes, duplicate the last node
-                right = current_layer[i + 1] if i + 1 < len(current_layer) else left
-                next_layer.append(self._hash_pair(left, right))
+                if i + 1 < len(current_layer):
+                    right = current_layer[i + 1]
+                    next_layer.append(self._hash_pair(left, right))
+                else:
+                    # Direct promotion: NodeHash(L) = L (RFC 6962 direct promotion, eliminates Bitcoin CVE-2012-2459)
+                    next_layer.append(left)
             self.layers.append(next_layer)
             current_layer = next_layer
 
@@ -132,12 +135,13 @@ class MerkleTree:
 
             if is_odd:
                 sibling_idx = idx - 1
-                is_sibling_left = True
+                proof.append((layer[sibling_idx], True))
             else:
-                sibling_idx = idx + 1 if idx + 1 < len(layer) else idx
-                is_sibling_left = False
+                if idx + 1 < len(layer):
+                    sibling_idx = idx + 1
+                    proof.append((layer[sibling_idx], False))
+                # Unbalanced subtree: node was promoted directly without sibling at this layer
 
-            proof.append((layer[sibling_idx], is_sibling_left))
             idx = idx // 2
 
         return proof

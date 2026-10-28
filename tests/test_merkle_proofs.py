@@ -127,6 +127,27 @@ class TestMerkleProofs(unittest.TestCase):
             tampered_leaf = leaf_hash[:-1] + ("0" if leaf_hash[-1] != "0" else "1")
             self.assertFalse(engine.verify_audit_proof(tampered_leaf, proof, root))
 
+    def test_cve_2012_2459_malleability_immunity(self) -> None:
+        """Verify immunity against Bitcoin CVE-2012-2459 duplicate leaf malleability attacks."""
+        a = hashlib.sha256(b"event_A").hexdigest()
+        b = hashlib.sha256(b"event_B").hexdigest()
+        c = hashlib.sha256(b"event_C").hexdigest()
+
+        tree_odd = MerkleTree([a, b, c])
+        tree_duplicated = MerkleTree([a, b, c, c])
+
+        # Under direct promotion NodeHash(L)=L, tree_odd and tree_duplicated MUST produce distinct roots
+        self.assertNotEqual(
+            tree_odd.root,
+            tree_duplicated.root,
+            "Vulnerability detected: Odd node duplication caused root collision (CVE-2012-2459).",
+        )
+
+        # Inclusion proofs for all leaves in odd-sized tree must still verify rigorously
+        for idx, leaf in enumerate([a, b, c]):
+            proof = tree_odd.get_proof(idx)
+            self.assertTrue(MerkleTree.verify_proof(leaf, proof, tree_odd.root))
+
 
 if __name__ == "__main__":
     unittest.main()
