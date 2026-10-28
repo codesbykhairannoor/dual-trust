@@ -480,20 +480,22 @@ Comparative baseline frameworks evaluated include: (1)~\textbf{Vanilla Static RB
 \caption{Architectural, Runtime Latency, and Economic Benchmark Comparison ($N = 10{,}000$ Physical Evaluations)}
 \label{tab:benchmark}
 \footnotesize
-\setlength{\tabcolsep}{5.5pt}
-\begin{tabular*}{\textwidth}{@{\extracolsep{\fill}}llccccc@{}}
+\setlength{\tabcolsep}{5pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccccc@{}}
 \toprule
 \textbf{Architecture} & \textbf{Verification Mechanism} & \textbf{Mean Latency} & \textbf{Median (p50)} & \textbf{p99 Latency} & \textbf{Cost / 10k} & \textbf{Audit Trail} \\
 \midrule
-Vanilla Static RBAC & In-Memory Hash Table Lookup & 12.40\,$\mu$s & 11.20\,$\mu$s & 28.10\,$\mu$s & \$0.00 & None (Plaintext) \\
-Guardrails AI~\cite{rajpal2024guardrails} & AST Schema Validation (Pydantic) & 3.20\,ms & 2.85\,ms & 14.50\,ms & \$0.00 & None \\
+Vanilla Static RBAC & In-Memory Hash Lookup & 12.40\,$\mu$s & 11.20\,$\mu$s & 28.10\,$\mu$s & \$0.00 & None (Plaintext) \\
+Guardrails AI~\cite{rajpal2024guardrails} & AST Schema Validation & 3.20\,ms & 2.85\,ms & 14.50\,ms & \$0.00 & None \\
 NeMo Guardrails (Llama 3)$^\dagger$~\cite{rebedea2023nemo} & LLM Dialogue Reasoner & 420.00\,ms & 390.00\,ms & 1,250.00\,ms & \$25.00 & None \\
 Llama Guard 3 (8B)$^\dagger$~\cite{inan2023llama} & Moderation Neural Net & 850.00\,ms & 810.00\,ms & 2,100.00\,ms & \$50.00 & None \\
 \midrule
-\textbf{DualTrust (In-Memory Tier)} & \textbf{Asymmetric Bayesian (RAM Cache)} & \textbf{63.16\,$\mu$s} & \textbf{47.10\,$\mu$s} & \textbf{287.10\,$\mu$s} & \textbf{\$0.00} & \textbf{RFC 6962 Merkle Tree} \\
+\textbf{DualTrust (In-Memory Tier)} & \textbf{Asymmetric Bayesian (RAM)} & \textbf{63.16\,$\mu$s} & \textbf{47.10\,$\mu$s} & \textbf{287.10\,$\mu$s} & \textbf{\$0.00} & \textbf{RFC 6962 Merkle Tree} \\
 \textbf{DualTrust (SQLite WAL Tier)} & \textbf{ACID Disk-Backed Ledger} & \textbf{292.33\,$\mu$s} & \textbf{155.80\,$\mu$s} & \textbf{1,086.90\,$\mu$s} & \textbf{\$0.00} & \textbf{RFC 6962 + SQLite WAL} \\
 \bottomrule
-\end{tabular*}
+\end{tabular}%
+}
 \\[3pt]
 \footnotesize{$^\dagger$Inference-time neural guardrail latencies reflect established empirical literature and vendor benchmarks under 8B models~\cite{rebedea2023nemo, inan2023llama}.}
 \end{table*}
