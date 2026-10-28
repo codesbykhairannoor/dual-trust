@@ -143,8 +143,10 @@ where $C_u \in \mathbb{R}_{\ge 0}$ is the available credit balance, and $\mathca
 \end{equation}
 where $\alpha_a, \beta_a \in \mathbb{R}_{\ge 1}$ parameterize the Beta distribution, $v_a \in \mathbb{N}$ records cumulative lifetime infractions, $s_{\text{clean}} \in \mathbb{N}$ denotes the consecutive clean action streak, $t_{\text{last}}$ is the timestamp of the last observed action, and $\text{Status}_a \in \{\text{VERIFIED}, \text{PROBATION}, \text{RESTRICTED}, \text{QUARANTINED}\}$.
 
-\subsection{Adversary Capabilities \& Attack Scenarios}
-In alignment with the MITRE ATLAS matrix and cyber-physical runtime security standards, we formalize an adversary $\mathcal{M}$ controlling untrusted input contexts, rogue agent processes, and compromised third-party tool endpoints on an ambient edge host:
+\subsection{Adversary Model \& System Trust Assumptions}
+\textbf{Adversary Capabilities}: In alignment with the MITRE ATLAS matrix and cyber-physical runtime security standards, we formalize an active adversary $\mathcal{M}$ endowed with realistic operational capabilities. $\mathcal{M}$ can adaptively inject malicious prompt payloads into tool context windows, manipulate input parameters, compromise third-party tool endpoints to return synthetic timeouts, and coordinate collusive probationary bot rings.
+
+\textbf{System Trust Assumptions}: DualTrust operates as a stateful OS-level gatekeeper at the execution boundary between the agent reasoning loop and host tool invocations. We assume: (1) The host operating system kernel, CPU execution state, and Python runtime interpreter are trusted; (2) Human Principal identifiers $u$ are strongly authenticated via host-level credentials (e.g., OS user accounts or hardware WebAuthn tokens), placing root-level Human Principal identity synthesis out-of-scope for the agent gatekeeper; and (3) Cryptographic primitives (SHA-256 and HMAC) are computationally intractable.
 \begin{enumerate}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
 \item \textbf{Adversary Profile 1: The Oscillating Salami Slicer ($\mathcal{M}_{\text{OSS}}$)}: The adversary alternates between compliant tasks and sub-threshold infractions. The attacker aims to exploit credit recovery formulas and temporal decay to slowly drain resources or bypass scrutiny without triggering permanent sanctions.
 \item \textbf{Adversary Profile 2: The Trojan Sleeper Agent ($\mathcal{M}_{\text{TSA}}$)}: The adversary maintains perfect compliance across hundreds of transactions, accumulating established verified reputation ($T_a \ge 0.89$), before executing a single catastrophic, high-severity exploit.
@@ -267,7 +269,7 @@ Conversely, when an agent completes a verified compliant interaction, $\alpha_a$
 \Delta\alpha = w_{\text{reward}} = 0.20
 \label{eq:positive_reward}
 \end{equation}
-where $s_{\text{clean}} \leftarrow s_{\text{clean}} + 1$. This mathematical asymmetry ensures that gaining trust is strictly linear ($\Delta\alpha = 0.20$), while losing trust escalates superlinearly ($\Delta\beta \propto v_a^{1.8}$).
+where $s_{\text{clean}} \leftarrow s_{\text{clean}} + 1$. A flat reward structure ($\Delta\alpha = 0.20$) was chosen deliberately over graded or variable rewards: graded rewards create an exploitable attack surface for ``reward-farming'' (where an adversary constructs benign low-cost tasks optimized solely to maximize $\Delta\alpha$ gains), whereas a static nominal reward maintains a strictly controlled, linear trust-accumulation rate while ensuring an insurmountable asymmetric ratio against superlinear slashing penalties ($\Delta\beta \propto v_a^{1.8}$).
 
 \subsection{Dynamic Payoff Analysis: Finite-Horizon Non-Viability of Salami-Slicing}
 
@@ -415,7 +417,7 @@ DualTrust enforces balance atomicity through Algorithm~\ref{alg:gate}:
 \begin{enumerate}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
 \item \textbf{Pre-Execution Phase}: Lock $L_{B(u)}$ is acquired. Credit balance $C_u$ is validated against tool cost $\text{Cost}(t)$. If insufficient, the request is rejected. Otherwise, $C_u \leftarrow C_u - \text{Cost}(t)$ is committed, and $L_{B(u)}$ is released.
 \item \textbf{Tool Execution Phase}: The physical tool $t$ executes outside the lock boundary, preventing slow I/O operations from blocking other users mapped to stripe $B(u)$.
-\item \textbf{Compensating Rollback Phase}: If the tool raises an exception, the runtime re-acquires lock $L_{B(u)}$, credits back the exact reservation $C_u \leftarrow C_u + \text{Cost}(t)$, logs the compensating transaction, releases the lock, and re-raises the exception. DualTrust specifically traps \texttt{BaseException} (rather than generic standard exceptions) within this rollback pathway, ensuring that asynchronous task cancellations (\texttt{asyncio.CancelledError}) or runtime system interrupts strictly trigger credit restitution, eliminating token/quota leakage under aborted requests.
+\item \textbf{Compensating Rollback Phase}: If the tool raises an exception, the runtime re-acquires lock $L_{B(u)}$, credits back the exact reservation $C_u \leftarrow C_u + \text{Cost}(t)$, logs the compensating transaction, releases the lock, and re-raises the exception. DualTrust specifically traps \texttt{BaseException} (rather than generic standard exceptions) within this rollback pathway, ensuring that asynchronous task cancellations (\texttt{asyncio.CancelledError}) or runtime system interrupts strictly trigger credit restitution. Crucially, the rollback handler executes the compensating credit refund and then strictly re-raises the caught \texttt{BaseException}, ensuring system shutdowns and asynchronous task interruptions are never swallowed. Furthermore, DualTrust enforces a strict \emph{Single-Stripe Lock Discipline}: an invocation acquires only its assigned stripe lock $L_{B(u)}$ and never attempts to acquire secondary stripes, eliminating lock-inversion deadlocks by construction.
 \end{enumerate}
 
 \subsection{Multi-Worker SQLite WAL with Immediate Transactions}
@@ -548,6 +550,33 @@ Llama Guard 3 (8B)$^\dagger$~\cite{inan2023llama} & Moderation Neural Net & 850.
 \footnotesize{$^\dagger$Inference-time neural guardrail latencies reflect established empirical literature and vendor benchmarks under 8B models~\cite{rebedea2023nemo, inan2023llama}.}
 \end{table*}
 
+\begin{table*}[!t]
+\centering
+\caption{Manuscript-to-Code Parameter Concordance and Empirical Operational Calibration}
+\label{tab:concordance}
+\footnotesize
+\setlength{\tabcolsep}{6pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccl@{}}
+\toprule
+\textbf{Governance Dimension} & \textbf{Mathematical Notation} & \textbf{Code Variable Name} & \textbf{Engine Default} & \textbf{Physical Operational Semantic} \\
+\midrule
+Compliance Reward & $\Delta\alpha = w_{\text{reward}}$ (Eq.~\ref{eq:positive_reward}) & \texttt{weight} (\texttt{apply\_positive\_feedback}) & \texttt{0.20} & Flat linear credit increment per verified compliant execution \\
+Penalty Multiplier & $k_p$ (Eq.~\ref{eq:power_law}) & \texttt{penalty\_multiplier} & \texttt{3.5} & Asymmetric base scaling coefficient for violation penalties \\
+Slashing Exponent & $\gamma$ (Eq.~\ref{eq:power_law}) & \texttt{slashing\_exponent} & \texttt{1.8} & Critical power-law exponent escalating repeat infraction penalties \\
+Infraction Severity & $\text{sev} \in [1.0, 5.0]$ (Eq.~\ref{eq:power_law}) & \texttt{severity} (\texttt{apply\_violation\_penalty}) & \texttt{[1.0, 5.0]} & 5-tier categorical risk scale (Level 1.0--1.5 minor to Level 5.0 critical) \\
+Quarantine Threshold & $\tau_{\text{quar}}$ (Eq.~\ref{eq:lifecycle_tiers}) & \texttt{quarantine_threshold} & \texttt{0.20} & Terminal Bayesian trust boundary triggering operational isolation \\
+Restricted Boundary & $\tau_{\text{restr}}$ (Eq.~\ref{eq:lifecycle_tiers}) & \texttt{determine\_status} boundary & \texttt{0.40} & Lower-water threshold requiring human-in-the-loop (HITL) authorization \\
+Minor Glitch Register & $M_{\text{thresh}}$ (Sec.~\ref{sec:strike_recovery}) & \texttt{minor\_infraction\_threshold} & \texttt{3} & Transient fault buffer capacity before formal strike escalation \\
+Active Recovery Window & $W_{\text{recovery}}$ (Sec.~\ref{sec:strike_recovery}) & \texttt{recovery\_clean\_window} & \texttt{20} & Compliant streak window required to decrement active strike counter $v_a$ \\
+Stripe Lock Buckets & $B$ (Eq.~\ref{eq:striped_hash}) & \texttt{num\_locks} & \texttt{64} & Independent reentrant lock array shards eliminating global bottlenecks \\
+Sliding Memory Window & $W_{\text{RAM}}$ (Sec.~\ref{sec:concurrency}) & Buffer leaf capacity & \texttt{5,000} & Active resident Merkle leaves bounded to strict $\mathcal{O}(1)$ heap RAM \\
+Rolling Epoch Seal & $S_{\text{epoch}}$ (Sec.~\ref{sec:concurrency}) & \texttt{epoch\_seal_size} & \texttt{1,000} & Checkpoint frequency committing intermediate Merkle root to SQLite WAL \\
+\bottomrule
+\end{tabular}%
+}
+\end{table*}
+
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{figures/figure3_latency_comparison.png}
@@ -602,7 +631,7 @@ We subjected the entire codebase to an automated suite of \textbf{176 invariant 
 \subsection{Sensitivity \& Ablation Studies}
 We performed ablation analyses across core hyperparameters:
 \begin{itemize}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
-\item \textbf{Slashing Exponent $\gamma$}: We evaluated $\gamma \in \{1.0, 1.2, 1.5, 1.8, 2.0, 2.5\}$. At $\gamma = 1.0$ (linear), containment failed against salami slicers. At $\gamma \ge 2.0$, transient false-positive errors resulted in overly punitive degradation. The exponent $\gamma = 1.8$ provided the optimal Pareto trade-off between resilience and rapid containment.
+\item \textbf{Penalty Multiplier $k_p$ \& Exponent $\gamma$ Sensitivity}: We evaluated $k_p \in [1.0, 5.0]$ and $\gamma \in \{1.0, 1.2, 1.5, 1.8, 2.0, 2.5\}$. At $k_p < 2.0$ or $\gamma = 1.0$ (linear), containment against salami slicers required $\ge 7$ exploit cycles, allowing unacceptable resource leakage. Conversely, at $k_p > 4.5$ or $\gamma \ge 2.2$, single moderate errors incurred overly punitive degradation. The combination of $k_p = 3.5$ and $\gamma = 1.8$ achieved the optimal Pareto frontier: containing salami slicers within 2--3 cycles while allowing active recovery window forgiveness for transient faults.
 \item \textbf{Striped Lock Buckets}: We varied lock buckets $B \in \{16, 32, 64, 128\}$. Contention benchmarks at 100 concurrent worker threads demonstrated that 64 buckets reduced lock wait time to $<1.2\,\mu$s, with negligible memory footprint.
 \end{itemize}
 
