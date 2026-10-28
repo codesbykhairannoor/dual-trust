@@ -90,7 +90,7 @@ DualTrust is built upon four foundational design principles:
 \end{enumerate}
 
 \subsection{Organization of this Paper}
-The remainder of this paper is organized as follows: Section~\ref{sec:related_work} reviews related work across LLM guardrails, multi-agent frameworks, adversarial threat vectors, and distributed trust systems. Section~\ref{sec:threat_model} formalizes our threat model and security invariants. Section~\ref{sec:math_engine} details the mathematical derivations, Beta-Dirichlet conjugate priors, power-law slashing, and game-theoretic proofs. Section~\ref{sec:concurrency} details the systems engineering architecture, striped concurrency, and Merkle audit ledger. Section~\ref{sec:algorithms} presents the formal algorithmic specifications. Section~\ref{sec:evaluation} reports our comprehensive empirical benchmarks across 171 automated invariant tests and 10,000-cycle Monte Carlo simulations. Section~\ref{sec:discussion} discusses societal impacts, ambient wearable roadmaps, and intellectual limitations. Section~\ref{sec:conclusion} concludes the paper.
+The remainder of this paper is organized as follows: Section~\ref{sec:related_work} reviews related work across LLM guardrails, multi-agent frameworks, adversarial threat vectors, and distributed trust systems. Section~\ref{sec:threat_model} formalizes our threat model and security invariants. Section~\ref{sec:math_engine} details the mathematical derivations, Beta-Dirichlet conjugate priors, power-law slashing, and game-theoretic proofs. Section~\ref{sec:concurrency} details the systems engineering architecture, striped concurrency, and Merkle audit ledger. Section~\ref{sec:algorithms} presents the formal algorithmic specifications. Section~\ref{sec:evaluation} reports our comprehensive empirical benchmarks across 176 automated invariant tests and 10,000-cycle Monte Carlo simulations. Section~\ref{sec:discussion} discusses societal impacts, ambient wearable roadmaps, and intellectual limitations. Section~\ref{sec:conclusion} concludes the paper.
 
 \section{Related Work}
 \label{sec:related_work}
@@ -179,12 +179,15 @@ Let an unverified or probationary reporter $a_{\text{rep}}$ ($\text{Status}(a_{\
 For any authorization verdict $V$ logged at index $k$ into Merkle ledger $\mathcal{L}$, there exists a verifiable inclusion proof $\pi_k$ of size $\mathcal{O}(\log |\mathcal{L}|)$ demonstrating $V \in \text{Root}(\mathcal{L})$. Any modification to historical entry $V$ alters $\text{Root}(\mathcal{L})$ with probability $1 - 2^{-256}$.
 \end{invariant}
 
+\subsection{Infraction Detection Oracle Taxonomy}
+DualTrust deliberately does not perform semantic natural-language inspection of conversational prompts; rather, it operates as a deterministic runtime gatekeeper over physical tool invocations, credit balances, and cryptographic state transitions. Behavioral infractions ($\text{sev} > 0$) are supplied to DualTrust via four deterministic observation oracles: (1) \emph{Tool Runtime Traps} (unhandled exceptions, execution timeouts, and non-zero exit codes); (2) \emph{Schema \& Parameter Validators} (type mismatches, out-of-boundary parameter values, and prohibited tool endpoints); (3) \emph{Human Principal Revocations} (explicit tactile cancellations, quota exhaustion, or user dispute signals); and (4) \emph{Verified Peer Watchdogs} (independent auditor agents submitting verifiable execution discrepancies).
+
 \section{The DualTrust Mathematical Engine}
 \label{sec:math_engine}
 
 We detail the complete probabilistic formulations, time-decay mechanics, power-law slashing functions, and game-theoretic proofs underpinning DualTrust.
 
-\subsection{Bayesian Beta-Dirichlet Conjugate Prior}
+\subsection{Bayesian Beta-Bernoulli Formulation \& Dirichlet Generalization}
 Following Bayesian probability theory~\cite{josang2002beta}, binary success/failure outcomes in agent behavior are governed by a Bernoulli distribution with parameter $\theta \in [0, 1]$. The conjugate prior distribution for $\theta$ is the Beta distribution:
 \begin{equation}
 f(\theta \mid \alpha, \beta) = \frac{1}{\text{B}(\alpha, \beta)} \theta^{\alpha - 1} (1 - \theta)^{\beta - 1}
@@ -347,9 +350,11 @@ When an operation requires access to Human Principal $u$'s state, the correspond
 \text{Digest}(u) = \text{SHA-256}(\text{UTF8}(u))
 \end{equation}
 \begin{equation}
-B(u) = \left( \sum_{i=0}^{3} \text{Digest}(u)[i] \cdot 256^{3-i} \right) \pmod{64}
+B(u) = \text{UInt32}(\text{Digest}(u)[0:4]) \pmod{64} \equiv \text{Digest}(u)[3] \pmod{64}
 \label{eq:striped_hash}
 \end{equation}
+Because $256^k \equiv 0 \pmod{64}$ for all $k \ge 1$, evaluating the 4-byte big-endian digest prefix modulo 64 algebraically collapses to the lowest 6 bits of byte index 3 ($\text{Digest}(u)[3] \pmod{64}$), providing $O(1)$ constant-time bucket extraction directly on CPU registers without multi-precision integer division. 
+
 We emphasize that while 64-striped reentrant locks provide high-throughput, non-blocking thread safety within a single process memory space, cross-process multi-worker durability is formally guaranteed at the storage engine tier via SQLite Write-Ahead Logging (WAL) and \texttt{BEGIN IMMEDIATE} write transactions, ensuring ACID serialization across distributed worker processes.
 
 Unlike non-cryptographic hashing algorithms (such as Python's randomized \texttt{hash()} or legacy MD5), SHA-256 byte extraction guarantees:
@@ -416,39 +421,35 @@ Algorithm~\ref{alg:lifecycle} (lines 23--30) guarantees tamper-evident audit dur
 \label{alg:merkle}
 \footnotesize
 \begin{algorithmic}[1]
-\REQUIRE Principal $u$, Agent $a$, Tool $t$, Args $\text{args}$, Cost $c_{\text{req}}$, Infraction Record $(\text{sev}, c_{\text{rep}}, r)$
-\ENSURE Tool Output $R$, Slashing Verdict, or Raised Exception
+\REQUIRE Principal $u$, Agent $a$, Tool $t$, Args $\text{args}$, Cost $c_{\text{req}}$, Record $(\text{sev}, c_{\text{rep}}, r)$, Event $M$
+\ENSURE Tool Output $R$, Slashing Verdict, or Exception
 \vspace{2pt}
-\STATE \textbf{// Phase I: Striped Authorization \& Quota Gating (Pre-Execution)}
-\STATE $b \leftarrow \text{SHA-256}(u) \pmod{64}$ \hfill $\triangleright$ \textit{Deterministic Stripe Lock}
-\STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$; \;\; $\mathcal{S}_u \leftarrow \text{LoadUser}(u), \; \mathcal{S}_a \leftarrow \text{LoadAgent}(a)$
-\STATE $T_a \leftarrow \text{ComputeDecayedTrust}(\mathcal{S}_a)$ \hfill $\triangleright$ \textit{Eq.~\eqref{eq:beta_expectation}, \eqref{eq:decay}}
-\STATE \textbf{if} $\mathcal{S}_a.\text{Status} = \text{QUARANTINED} \lor T_a < \tau_{\text{quarantine}}$ \textbf{then} \textbf{release} $\mathcal{L}_{\text{striped}}[b]$; \textbf{throw} \textsc{ErrQuarantined}
-\STATE \textbf{if} $\mathcal{S}_u.C_u < c_{\text{req}}$ \textbf{then} \textbf{release} $\mathcal{L}_{\text{striped}}[b]$; \textbf{throw} \textsc{ErrInsufficientCredit}
-\STATE $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u - c_{\text{req}}$; \;\; $\text{CommitState}(\mathcal{S}_u)$; \;\; \textbf{release} $\mathcal{L}_{\text{striped}}[b]$ \hfill $\triangleright$ \textit{Reserve Quota}
-\STATE $(R, \text{status}) \leftarrow \text{ExecuteTargetTool}(t, \text{args})$ \hfill $\triangleright$ \textit{Execute Tool Outside Lock}
-\IF{$\text{status} = \text{SUCCESS}$}
-    \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``SUCCESS''}, c_{\text{req}})$; \;\; \RETURN $R$
-\ELSE
-    \STATE \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$; \;\; $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u + c_{\text{req}}$ \hfill $\triangleright$ \textit{Compensating Rollback}
-    \STATE $\text{CommitState}(\mathcal{S}_u)$; \;\; \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
-    \STATE $\text{AppendMerkleEvent}(u, a, t, \text{``ROLLBACK''}, 0.0)$; \;\; \textbf{throw} \textsc{ErrExecutionFailure}(status)
-\ENDIF
+\STATE \textbf{procedure} \textsc{AuthorizeAndGate}($u, a, t, \text{args}, c_{\text{req}}$):
+\STATE \quad $b \leftarrow \text{Digest}(u)[3] \pmod{64}$ \hfill $\triangleright$ \textit{Deterministic Stripe Lock}
+\STATE \quad \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$; \;\; $\mathcal{S}_u \leftarrow \text{LoadUser}(u), \; \mathcal{S}_a \leftarrow \text{LoadAgent}(a)$
+\STATE \quad $T_a \leftarrow \text{ComputeDecayedTrust}(\mathcal{S}_a)$ \hfill $\triangleright$ \textit{Eq.~\eqref{eq:beta_expectation}, \eqref{eq:decay}}
+\STATE \quad \textbf{if} $\mathcal{S}_a.\text{Status} = \text{QUARANTINED} \lor T_a < \tau_{\text{quar}}$ \textbf{then} \textbf{release} $\mathcal{L}_{\text{striped}}[b]$; \textbf{throw} \textsc{ErrQuar}
+\STATE \quad \textbf{if} $\mathcal{S}_u.C_u < c_{\text{req}}$ \textbf{then} \textbf{release} $\mathcal{L}_{\text{striped}}[b]$; \textbf{throw} \textsc{ErrInsufficientCredit}
+\STATE \quad $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u - c_{\text{req}}$; \;\; $\text{CommitState}(\mathcal{S}_u)$; \;\; \textbf{release} $\mathcal{L}_{\text{striped}}[b]$ \hfill $\triangleright$ \textit{Reserve Quota}
+\STATE \quad $(R, \text{status}) \leftarrow \text{ExecuteTargetTool}(t, \text{args})$ \hfill $\triangleright$ \textit{Execute Outside Lock}
+\STATE \quad \textbf{if} $\text{status} = \text{SUCCESS}$ \textbf{then} $\text{AppendMerkleEvent}(u, a, t, \text{``SUCCESS''}, c_{\text{req}})$; \RETURN $R$
+\STATE \quad \textbf{acquire} $\mathcal{L}_{\text{striped}}[b]$; \;\; $\mathcal{S}_u.C_u \leftarrow \mathcal{S}_u.C_u + c_{\text{req}}$ \hfill $\triangleright$ \textit{Compensating Rollback Refund}
+\STATE \quad $\text{CommitState}(\mathcal{S}_u)$; \;\; \textbf{release} $\mathcal{L}_{\text{striped}}[b]$
+\STATE \quad $\text{AppendMerkleEvent}(u, a, t, \text{``ROLLBACK''}, 0.0)$; \;\; \textbf{throw} \textsc{ErrExecutionFailure}(status)
+
 \vspace{3pt}
-\STATE \textbf{// Phase II: Asymmetric Power-Law Slashing (Witness $r$, $\text{sev}, c_{\text{rep}}$)}
-\STATE \textbf{if} $\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land \mathcal{S}_r.\text{Status} = \text{PROBATION}$ \textbf{then} \RETURN $\mathcal{S}_a$ \hfill $\triangleright$ \textit{Sybil Immunity}
-\STATE $\mathcal{S}_a.v_a \leftarrow \mathcal{S}_a.v_a + 1; \quad \mathcal{S}_a.s_{\text{clean}} \leftarrow 0$ \hfill $\triangleright$ \textit{Monotonic $v_a$, Streak Reset}
-\STATE $\Delta\beta \leftarrow k_p \cdot (\text{sev} \cdot c_{\text{rep}}^2) \cdot (\max(1, \mathcal{S}_a.v_a))^{1.8}$; \;\; $\mathcal{S}_a.\beta_a \leftarrow \mathcal{S}_a.\beta_a + \Delta\beta$
-\STATE $T_{\text{new}} \leftarrow \mathcal{S}_a.\alpha_a / (\mathcal{S}_a.\alpha_a + \mathcal{S}_a.\beta_a)$; \;\; $\text{UpdateOperationalStatus}(\mathcal{S}_a, T_{\text{new}})$
-\STATE $\text{CommitState}(\mathcal{S}_a)$; \;\; $\text{AppendMerkleEvent}(r, a, \text{sev}, \Delta\beta)$; \;\; \RETURN $\mathcal{S}_a$
+\STATE \textbf{procedure} \textsc{ApplyPowerLawSlashing}($a, r, \text{sev}, c_{\text{rep}}$):
+\STATE \quad \textbf{if} $\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land \mathcal{S}_r.\text{Status} = \text{PROBATION}$ \textbf{then} \RETURN $\mathcal{S}_a$ \hfill $\triangleright$ \textit{Sybil Immunity}
+\STATE \quad $\mathcal{S}_a.v_a \leftarrow \mathcal{S}_a.v_a + 1; \quad \mathcal{S}_a.s_{\text{clean}} \leftarrow 0$ \hfill $\triangleright$ \textit{Monotonic $v_a$, Streak Reset}
+\STATE \quad $\Delta\beta \leftarrow k_p \cdot (\text{sev} \cdot c_{\text{rep}}^2) \cdot (\max(1, \mathcal{S}_a.v_a))^{1.8}$; \;\; $\mathcal{S}_a.\beta_a \leftarrow \mathcal{S}_a.\beta_a + \Delta\beta$
+\STATE \quad $T_{\text{new}} \leftarrow \mathcal{S}_a.\alpha_a / (\mathcal{S}_a.\alpha_a + \mathcal{S}_a.\beta_a)$; \;\; $\text{UpdateOperationalStatus}(\mathcal{S}_a, T_{\text{new}})$
+\STATE \quad $\text{CommitState}(\mathcal{S}_a)$; \;\; $\text{AppendMerkleEvent}(r, a, \text{sev}, \Delta\beta)$; \;\; \RETURN $\mathcal{S}_a$
+
 \vspace{3pt}
-\STATE \textbf{// Phase III: Sliding Merkle Ledger Ingestion \& Epoch Sealing}
-\STATE $H_{\text{leaf}} \leftarrow \text{SHA-256}(0\text{x}00 \parallel \text{Serialize}(M))$; \;\; $\mathcal{W}.\text{append}(H_{\text{leaf}})$
-\IF{$|\mathcal{W}| \ge S_{\text{epoch}}$}
-    \STATE $\text{Root}_{\text{epoch}} \leftarrow \mathcal{W}.\text{computeRoot}()$; \;\; $\text{PersistEpoch}(\text{Root}_{\text{epoch}}, \mathcal{W})$
-    \STATE $\mathcal{W}.\text{truncateSlidingWindow}(5000)$ \hfill $\triangleright$ \textit{Bound RAM to $\mathcal{O}(1)$}
-\ENDIF
-\STATE \RETURN $\text{GenerateInclusionReceipt}(H_{\text{leaf}}, \mathcal{W})$
+\STATE \textbf{procedure} \textsc{IngestAuditLedger}($M, \mathcal{W}, S_{\text{epoch}}$):
+\STATE \quad $H_{\text{leaf}} \leftarrow \text{SHA-256}(0\text{x}00 \parallel \text{Serialize}(M))$; \;\; $\mathcal{W}.\text{append}(H_{\text{leaf}})$
+\STATE \quad \textbf{if} $|\mathcal{W}| \ge S_{\text{epoch}}$ \textbf{then} $\text{PersistEpoch}(\mathcal{W}.\text{computeRoot}(), \mathcal{W})$; \;\; $\mathcal{W}.\text{truncateSlidingWindow}(5000)$
+\STATE \quad \RETURN $\text{GenerateInclusionReceipt}(H_{\text{leaf}}, \mathcal{W})$
 \end{algorithmic}
 \end{algorithm}
 
@@ -477,7 +478,7 @@ Comparative baseline frameworks evaluated include: (1)~\textbf{Vanilla Static RB
 
 \begin{table*}[!t]
 \centering
-\caption{Architectural, Runtime Latency, and Economic Benchmark Comparison ($N = 10{,}000$ Physical Evaluations)}
+\caption{Architectural, Runtime Latency, and Economic Benchmark Comparison (DualTrust Evaluated across $N = 10{,}000$ Physical Workstation Cycles; Baseline Guardrails from Published Literature$^\dagger$)}
 \label{tab:benchmark}
 \footnotesize
 \setlength{\tabcolsep}{5pt}
@@ -503,7 +504,7 @@ Llama Guard 3 (8B)$^\dagger$~\cite{inan2023llama} & Moderation Neural Net & 850.
 \begin{figure}[!t]
 \centering
 \includegraphics[width=\columnwidth]{figures/figure3_latency_comparison.png}
-\caption{Runtime policy evaluation latency comparison plotted on a logarithmic scale. DualTrust executes in 33.47\,$\mu$s, outperforming inference-time LLM guardrails (NeMo Guardrails and Llama Guard 3) by over 12,000$\times$.}
+\caption{Runtime policy evaluation latency comparison plotted on a logarithmic scale. DualTrust achieves a median policy evaluation latency of 47.10\,$\mu$s under in-memory gating (and 155.80\,$\mu$s under persistent SQLite WAL transactions), outperforming inference-time neural guardrails (NeMo Guardrails and Llama Guard 3) by over 6,600$\times$ to 18,000$\times$, and localized AST validation by over 50$\times$.}
 \label{fig:latency}
 \end{figure}
 
@@ -528,8 +529,8 @@ To test Resistance Invariant~\ref{inv:salami}, we simulated an adversary executi
 As shown in Figure~\ref{fig:salami}:
 \begin{itemize}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
 \item In linear baseline reputation systems without clean streak zeroing, the oscillating salami slicer successfully maintained an average trust score above 0.82 indefinitely, gaming the system.
-\item In DualTrust, because each infraction immediately resets $s_{\text{clean}} \leftarrow 0$ and scales the penalty by $v_a^{1.8}$, the salami slicer's trust standing collapsed precipitously, dropping below the quarantine threshold ($\tau = 0.40$) at exactly cycle 12.
-\item The Trojan sleeper agent was quarantined immediately on step 40 ($T_a$ dropped from 0.95 to 0.05), proving that accumulated historical trust cannot shield an agent from severe contemporary violations.
+\item In DualTrust, because each infraction immediately resets $s_{\text{clean}} \leftarrow 0$ and scales the penalty superlinearly by $v_a^{1.8}$, the salami slicer's trust standing collapsed precipitously, dropping below the quarantine threshold ($\tau = 0.40$) at step 10 ($T_a = 0.2638$, after only 2 infraction cycles).
+\item The Trojan sleeper agent was quarantined immediately on step 40 ($T_a$ dropped from 0.898 to 0.322, breaching below the $\tau = 0.40$ quarantine threshold upon a single critical violation of $\text{sev} = 5.0$), empirically proving that historical trust accumulation cannot shield an agent from critical contemporary trespass.
 \end{itemize}
 
 \subsection{Sybil Defamation Resilience (RQ3)}
