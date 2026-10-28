@@ -1,6 +1,6 @@
 # DualTrust
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v0.4.0-blue.svg)](https://pypi.org/project/dualtrust/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v0.4.1-blue.svg)](https://pypi.org/project/dualtrust/)
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg)](https://pypi.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0%20(Pure%20Python)-success.svg)](https://pypi.org)
