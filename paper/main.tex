@@ -24,8 +24,11 @@
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
 \newtheorem{definition}{Definition}
 \newtheorem{invariant}{Security Invariant}
+
+\emergencystretch=1.5em
 
 \hyphenation{op-tical net-works semi-conduc-tor}
 
@@ -125,7 +128,7 @@ We formalize the execution environment as a triple $\langle \mathcal{U}, \mathca
 \begin{itemize}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
 \item $\mathcal{U} = \{u_1, u_2, \dots, u_m\}$: The set of registered Human Principals.
 \item $\mathcal{A} = \{a_1, a_2, \dots, a_n\}$: The set of Autonomous Software Agents. Each agent $a$ operates on behalf of an endorsing principal $u = \text{Owner}(a)$.
-\item $\mathcal{T} = \{t_1, t_2, \dots, t_k\}$: The catalog of registered tool endpoints (e.g., \texttt{api.bank.transfer}, \texttt{sys.file.delete}, \texttt{iot.transport.book}).
+\item $\mathcal{T} = \{t_1, t_2, \dots, t_k\}$: The catalog of registered tool endpoints (e.g., \texttt{bank.transfer}, \texttt{file.delete}, \texttt{iot.book}).
 \end{itemize}
 
 Each human principal $u$ maintains an Accountable State:
@@ -242,14 +245,14 @@ Operational agent status is dynamically partitioned into four distinct lifecycle
 \begin{equation}
 \text{Status}(a) = 
 \begin{cases}
-\text{VERIFIED}, & \text{if } T_a \ge 0.70 \land \neg \text{Quarantined} \\
-\text{PROBATION}, & \text{if } 0.40 \le T_a < 0.70 \land \neg \text{Quarantined} \\
-\text{RESTRICTED}, & \text{if } 0.20 \le T_a < 0.40 \land \neg \text{Quarantined} \\
-\text{QUARANTINED}, & \text{if } T_a < 0.20 \lor \text{Quarantined}
+\text{VERIFIED}, & T_a \ge 0.70 \land \neg Q_a \\
+\text{PROBATION}, & 0.40 \le T_a < 0.70 \land \neg Q_a \\
+\text{RESTRICTED}, & 0.20 \le T_a < 0.40 \land \neg Q_a \\
+\text{QUARANTINED}, & T_a < 0.20 \lor Q_a
 \end{cases}
 \label{eq:lifecycle_tiers}
 \end{equation}
-where $\text{Quarantined}$ is set to true immediately upon critical protocol trespass.
+where $Q_a \in \{\text{True}, \text{False}\}$ is the categorical quarantine flag triggered immediately upon critical protocol trespass.
 
 To prevent numerical overflow under extreme transaction scales ($N \ge 10^7$), cumulative infractions $v_a$ are represented as arbitrary-precision integers natively supported in the CPython runtime, ensuring exact evaluation of $v_a^{\gamma}$ without 64-bit integer overflow. Furthermore, observer confidence values are bounded by a minimum operational floor $c \ge c_{\text{floor}} = 0.05$ whenever non-zero severity is verified, preventing adversarial nullification via vanishing confidence.
 
@@ -327,7 +330,7 @@ DualTrust defines the reporting acceptance predicate $\Phi(a_{\text{tgt}}, b_j)$
 \begin{equation}
 \Phi(a_{\text{tgt}}, b_j) = 
 \begin{cases}
-\text{False}, & \text{if } \text{Status}(a_{\text{tgt}}) = \text{VERIFIED} \land c(b_j) < \tau_{\text{rep}} \\
+\text{False}, & \text{Status}(a_{\text{tgt}}) = \text{VERIFIED} \land c(b_j) < \tau_{\text{rep}} \\
 \text{True}, & \text{otherwise}
 \end{cases}
 \end{equation}
@@ -376,7 +379,10 @@ When an operation requires access to Human Principal $u$'s state, the correspond
 \text{Digest}(u) = \text{SHA-256}(\text{UTF8}(u))
 \end{equation}
 \begin{equation}
-B(u) = \text{UInt32}(\text{Digest}(u)[0:4]) \pmod{64} \equiv \text{Digest}(u)[3] \pmod{64}
+\begin{aligned}
+B(u) &= \text{UInt32}(\text{Digest}(u)[0:4]) \pmod{64} \\
+&\equiv \text{Digest}(u)[3] \pmod{64}
+\end{aligned}
 \label{eq:striped_hash}
 \end{equation}
 Because $256^k \equiv 0 \pmod{64}$ for all $k \ge 1$, evaluating the 4-byte big-endian digest prefix modulo 64 algebraically collapses to the lowest 6 bits of byte index 3 ($\text{Digest}(u)[3] \pmod{64}$), providing $O(1)$ constant-time bucket extraction directly on CPU registers without multi-precision integer division. 
