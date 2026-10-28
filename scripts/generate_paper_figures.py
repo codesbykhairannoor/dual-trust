@@ -72,7 +72,7 @@ ax.axhline(0.20, color='#b2182b', linestyle='--', alpha=0.9, label=r'Quarantine 
 
 ax.set_xlabel('Interaction Step Index (t)')
 ax.set_ylabel('Bayesian Trust Standing T(t)')
-ax.set_title('Figure 1: Containment Dynamics under Adversarial Salami-Slicing & Trojan Exploit')
+ax.set_title('Containment Dynamics under Salami-Slicing & Trojan Exploit', fontsize=10)
 ax.set_ylim(0.0, 1.05)
 ax.set_xlim(1, 100)
 ax.legend(loc='upper right', frameon=True, fontsize=8)
