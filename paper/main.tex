@@ -45,7 +45,7 @@
 \maketitle
 
 \begin{abstract}
-The proliferation of Ambient Wearable Intelligence (AWI) ecosystems---spanning augmented reality glasses, smartwatches, and pervasive edge IoT actuators---is fundamentally transitioning human-AI interaction from explicit tactile commands to continuous, implicit background tool delegation. In these ambient environments, autonomous Large Language Model (LLM) agents are granted operational authority to invoke external APIs, reserve financial micro-quotas, and control physical actuators. However, existing safety guardrails depend on secondary LLM-as-a-judge classifiers that introduce prohibitive runtime latencies (400--850\,ms) and recurring token expenses, while static role-based access control fails against continuous behavioral drift, memory backdoors, and interleaved salami-slicing exploits. We present \textbf{DualTrust}, an ultra-low-latency asymmetric Bayesian governance framework engineered specifically for autonomous multi-agent cyber-physical containment. DualTrust enforces a decoupled principal-agent architecture that strictly isolates Human Principal Accountable Credit from Bayesian Agent Operational Standing. Agent behavior is continuously modulated via an asymmetric power-law slashing engine ($\Delta\beta \propto (\text{sev} \cdot c^2) \cdot v^{1.8}$) with instantaneous clean-streak reset, deterministic SHA-256 64-bucket striped concurrency locks, atomically locked rollback refunds, and an $O(1)$ RAM sliding-window RFC~6962 Merkle audit ledger with rolling epoch seals. Evaluated across 176 automated invariant tests and 10,000-cycle Monte Carlo attack simulations, DualTrust makes deterministic authorization verdicts in a median latency of \textbf{47.10\,$\mu$s} in-memory (mean 63.16\,$\mu$s, tail p99 287.10\,$\mu$s) and \textbf{155.80\,$\mu$s} under persistent SQLite WAL disk transactions, with end-to-end Python decorator wrappers executing in median 60.70\,$\mu$s (async) and 88.30\,$\mu$s (sync) with zero API overhead. Compared against state-of-the-art LLM guardrails, DualTrust achieves over \textbf{6,600$\times$} lower latency (and over \textbf{32$\times$} to \textbf{50$\times$} lower latency than localized AST validators), provably enforces Sybil defamation immunity against collusive probation swarms, and provides forward-secure, tamper-evident audit logging with RFC~6962 inclusion verification, establishing a practical, foundational governance runtime for trustworthy ambient intelligence.
+The proliferation of Ambient Wearable Intelligence (AWI) ecosystems---spanning augmented reality glasses, smartwatches, and pervasive edge IoT actuators---is fundamentally transitioning human-AI interaction from explicit tactile commands to continuous, implicit background tool delegation. In these ambient environments, autonomous Large Language Model (LLM) agents are granted operational authority to invoke external APIs, reserve financial micro-quotas, and control physical actuators. However, existing safety guardrails depend on secondary LLM-as-a-judge classifiers that introduce prohibitive runtime latencies (400--850\,ms) and recurring token expenses, while static role-based access control fails against continuous behavioral drift, memory backdoors, and interleaved salami-slicing exploits. We present \textbf{DualTrust}, an ultra-low-latency asymmetric Bayesian governance framework engineered specifically for autonomous multi-agent cyber-physical containment. DualTrust enforces a decoupled principal-agent architecture that strictly isolates Human Principal Accountable Credit from Bayesian Agent Operational Standing. Agent behavior is continuously modulated via an asymmetric power-law slashing engine ($\Delta\beta \propto (\text{sev} \cdot c^2) \cdot v^{1.8}$) with instantaneous clean-streak reset, deterministic SHA-256 64-bucket striped concurrency locks, atomically locked rollback refunds, and an $O(1)$ RAM sliding-window RFC~6962 Merkle audit ledger with rolling epoch seals. Evaluated across 176 automated invariant tests and 10,000-cycle Monte Carlo attack simulations, DualTrust makes deterministic authorization verdicts in a median latency of \textbf{47.10\,$\mu$s} in-memory (mean 63.16\,$\mu$s, tail p99 287.10\,$\mu$s) and \textbf{155.80\,$\mu$s} under persistent SQLite WAL disk transactions, with end-to-end Python decorator wrappers executing in median 60.70\,$\mu$s (async) and 88.30\,$\mu$s (sync) with zero API overhead. Compared against state-of-the-art LLM guardrails, DualTrust achieves over \textbf{6,600$\times$} lower latency (and over \textbf{32$\times$} to \textbf{50$\times$} lower latency than localized AST validators), provably enforces Sybil defamation immunity against collusive probation swarms, and provides tamper-evident, append-only audit durability with RFC~6962 inclusion verification, establishing a practical, foundational governance runtime for trustworthy ambient intelligence.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -86,7 +86,7 @@ DualTrust is built upon four foundational design principles:
 \item \textbf{Decoupled Principal-Agent Accountability}: DualTrust formally separates the identity, financial balance, and legal liability of the Human Principal ($C_u$) from the Bayesian behavioral standing of the software Agent ($T_a$). If an agent malfunctions or is hijacked, its execution privileges are dynamically quarantined without destroying the human principal's system access.
 \item \textbf{Asymmetric Power-Law Slashing ($\gamma = 1.8$)}: Grounded in Bayesian Beta-Dirichlet conjugate priors~\cite{josang2002beta}, DualTrust enforces an asymmetric penalty function where penalties scale superlinearly with cumulative lifetime infractions. Any single infraction instantly resets the agent's clean streak to zero, proving that repeated cyclic micro-infractions (salami-slicing) yield strictly negative cumulative utility and terminate in finite-horizon operational quarantine.
 \item \textbf{Deterministic Sub-50-$\mu$s Concurrency}: Built entirely within the Python standard library with zero third-party dependencies, DualTrust implements 64-bucket SHA-256 striped reentrant locks and atomically locked compensating rollback refunds, completely eliminating time-of-check to time-of-use (TOCTOU) race conditions under massive parallel thread contention.
-\item \textbf{Tamper-Evident Merkle Provenance with $O(1)$ RAM}: Every authorization verdict, trust decay step, and slashing event is committed to an RFC~6962-compliant Merkle audit ledger~\cite{laurie2013certificate}. By implementing a dual-tier sliding memory buffer (5,000 blocks) and rolling epoch seals (1,000 blocks), DualTrust enforces forward-secure tamper-evident auditability while bounding RAM consumption to strict $O(1)$ complexity.
+\item \textbf{Tamper-Evident Merkle Provenance with $O(1)$ RAM}: Every authorization verdict, trust decay step, and slashing event is committed to an RFC~6962-compliant Merkle audit ledger~\cite{laurie2013certificate}. By implementing a dual-tier sliding memory buffer (5,000 blocks) and rolling epoch seals (1,000 blocks), DualTrust enforces tamper-evident, append-only audit durability while bounding RAM consumption to strict $O(1)$ complexity.
 \end{enumerate}
 
 \subsection{Organization of this Paper}
@@ -174,9 +174,9 @@ Let an unverified or probationary reporter $a_{\text{rep}}$ ($\text{Status}(a_{\
 \end{equation}
 \end{invariant}
 
-\begin{invariant}[Forward-Secure Tamper-Evident Audit Durability]
+\begin{invariant}[Tamper-Evident Append-Only Audit Durability]
 \label{inv:audit}
-For any authorization verdict $V$ logged at index $k$ into Merkle ledger $\mathcal{L}$, there exists a verifiable inclusion proof $\pi_k$ of size $\mathcal{O}(\log |\mathcal{L}|)$ demonstrating $V \in \text{Root}(\mathcal{L})$. Any modification to historical entry $V$ alters $\text{Root}(\mathcal{L})$ under SHA-256 collision resistance (security margin $\ge 128$ bits against second-preimage attacks).
+For any authorization verdict $V$ logged at index $k$ into Merkle ledger $\mathcal{L}$, there exists a verifiable inclusion proof $\pi_k$ of size $\mathcal{O}(\log |\mathcal{L}|)$ demonstrating $V \in \text{Root}(\mathcal{L})$. Any modification to historical entry $V$ alters $\text{Root}(\mathcal{L})$ under SHA-256 cryptographic security bounds (128-bit collision resistance and 256-bit second-preimage resistance).
 \end{invariant}
 
 \subsection{Infraction Detection Oracle Taxonomy}
@@ -385,7 +385,7 @@ We emphasize that while 64-striped reentrant locks provide high-throughput, non-
 
 Unlike non-cryptographic hashing algorithms (such as Python's randomized \texttt{hash()} or legacy MD5), SHA-256 byte extraction provides:
 \begin{enumerate}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
-\item \textbf{Uniform Dispersion}: Because SHA-256 exhibits optimal cryptographic avalanche properties, single-bit variations in principal identifiers $u$ distribute uniformly across the 64 stripes ($p = 1/64$ per bucket). Under birthday attack bounds, lock contention across stripes follows a binomial distribution with low collision probability ($< 1.6\%$ under 100 concurrent threads), eliminating hot-spot starvation.
+\item \textbf{Uniform Dispersion}: Because SHA-256 exhibits optimal cryptographic avalanche properties, single-bit variations in principal identifiers $u$ distribute uniformly across the 64 stripes ($p = 1/64$ per bucket). The pairwise stripe collision probability between any two distinct principals is $1/64 \approx 1.56\%$. Under 64 independent locks, thread contention across distinct principals is uniformly dispersed, preventing single-lock bottlenecks.
 \item \textbf{Cross-Process Determinism}: Worker processes running across separate OS memory spaces compute identical bucket indices for identical identifiers.
 \item \textbf{Reentrancy}: Each bucket $L_b$ instantiates Python's native \texttt{threading.RLock}. Nested decorator calls (e.g., delegated multi-tool pipelines where Agent A calls Tool B which internally calls Sub-Tool C) track execution recursion depth without self-deadlock.
 \end{enumerate}
@@ -464,10 +464,12 @@ Algorithm~\ref{alg:lifecycle} (lines 23--30) enforces tamper-evident audit durab
 \STATE \quad $\text{AppendMerkleEvent}(u, a, t, \text{``ROLLBACK''}, 0.0)$; \;\; \textbf{throw} \textsc{ErrExecutionFailure}(status)
 
 \vspace{3pt}
-\STATE \textbf{procedure} \textsc{ApplyPowerLawSlashing}($a, r, \text{sev}, c_{\text{rep}}$):
-\STATE \quad \textbf{if} $\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land \mathcal{S}_r.\text{Status} = \text{PROBATION}$ \textbf{then} \RETURN $\mathcal{S}_a$ \hfill $\triangleright$ \textit{Sybil Immunity}
+\STATE \textbf{procedure} \textsc{ApplyPowerLawSlashing}($a, r, \text{sev}, c_{\text{rep}}, \text{type}$):
+\STATE \quad \textbf{if} $\mathcal{S}_a.\text{Status} = \text{VERIFIED} \land (\mathcal{S}_r.\text{Status} \in \{\text{PROBATION}, \text{RESTRICTED}, \text{QUARANTINED}\} \lor c_{\text{rep}} < \tau_{\text{rep}})$ \textbf{then} \RETURN $\mathcal{S}_a$ \hfill $\triangleright$ \textit{Sybil Shield Invariant}
 \STATE \quad $\mathcal{S}_a.v_a \leftarrow \mathcal{S}_a.v_a + 1; \quad \mathcal{S}_a.s_{\text{clean}} \leftarrow 0$ \hfill $\triangleright$ \textit{Monotonic $v_a$, Streak Reset}
-\STATE \quad $\Delta\beta \leftarrow k_p \cdot (\text{sev} \cdot c_{\text{rep}}^2) \cdot (\max(1, \mathcal{S}_a.v_a))^{1.8}$; \;\; $\mathcal{S}_a.\beta_a \leftarrow \mathcal{S}_a.\beta_a + \Delta\beta$
+\STATE \quad $\Delta\beta \leftarrow k_p \cdot (\text{sev} \cdot c_{\text{rep}}^2) \cdot (\max(1, \mathcal{S}_a.v_a))^{1.8}$
+\STATE \quad \textbf{if} $\text{type} = \text{PROTOCOL\_TRESPASS} \land \text{sev} \ge 3.0$ \textbf{then} $\Delta\beta \leftarrow 2 \times \Delta\beta$; \;\; $\mathcal{S}_a.\text{Quarantined} \leftarrow \text{True}$ \hfill $\triangleright$ \textit{Critical Multiplier}
+\STATE \quad $\mathcal{S}_a.\beta_a \leftarrow \mathcal{S}_a.\beta_a + \Delta\beta$
 \STATE \quad $T_{\text{new}} \leftarrow \mathcal{S}_a.\alpha_a / (\mathcal{S}_a.\alpha_a + \mathcal{S}_a.\beta_a)$; \;\; $\text{UpdateOperationalStatus}(\mathcal{S}_a, T_{\text{new}})$
 \STATE \quad $\text{CommitState}(\mathcal{S}_a)$; \;\; $\text{AppendMerkleEvent}(r, a, \text{sev}, \Delta\beta)$; \;\; \RETURN $\mathcal{S}_a$
 
@@ -494,7 +496,7 @@ We conduct an extensive empirical evaluation to assess the performance, scalabil
 \item \textbf{RQ1 (Latency)}: Can DualTrust enforce authorization within the $<50\,\mu$s SLA under high-concurrency contention?
 \item \textbf{RQ2 (Salami-Slicing)}: How rapidly does asymmetric power-law slashing contain oscillating adversaries versus linear baselines?
 \item \textbf{RQ3 (Sybil Resilience)}: Does the probation barrier protect verified agents against coordinated defamation swarms?
-\item \textbf{RQ4 (Audit Integrity)}: Does the RFC~6962 ledger achieve forward-secure tamper-evident audit durability while strictly bounding RAM to $\mathcal{O}(1)$?
+\item \textbf{RQ4 (Audit Integrity)}: Does the RFC~6962 ledger achieve tamper-evident append-only audit durability while strictly bounding RAM to $\mathcal{O}(1)$?
 \end{itemize}
 
 \subsection{Experimental Setup \& Hardware Baseline}
@@ -549,7 +551,7 @@ Key findings include:
 To test Resistance Invariant~\ref{inv:salami}, we simulated an adversary executing 10,000 discrete actions under three distinct operational strategies using the authentic DualTrust mathematical engine:
 \begin{enumerate}[leftmargin=12pt, topsep=2pt, itemsep=1pt]
 \item \emph{Benign Worker}: Executes 100\% compliant tasks with high confidence ($\Delta\alpha = 0.20$ per step).
-\item \emph{Oscillating Salami Slicer}: Alternates between 4 compliant tasks and 1 moderate infraction ($\text{sev} = 2.0$, $c = 1.0$) every 5 steps (infractions at $t = 5, 10, 15, \dots$).
+\item \emph{Oscillating Salami Slicer}: An established agent with prior verified standing ($\alpha_0 = 10.0, \beta_0 = 1.0, T_0 = 0.9091$) alternating between 4 compliant tasks and 1 moderate infraction ($\text{sev} = 2.0$, $c = 1.0$) every 5 steps (infractions at $t = 5, 10, 15, \dots$).
 \item \emph{Trojan Sleeper Agent}: Maintains 100\% compliance for 39 consecutive cycles ($T_{39} = 0.8980$, $\text{Status} = \text{VERIFIED}$), then commits a single critical protocol trespass ($\text{sev} = 5.0$, \texttt{PROTOCOL\_TRESPASS}) at step 40.
 \end{enumerate}
 
