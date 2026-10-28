@@ -565,13 +565,13 @@ Compliance Reward & $\Delta\alpha = w_{\text{reward}}$ (Eq.~\ref{eq:positive_rew
 Penalty Multiplier & $k_p$ (Eq.~\ref{eq:power_law}) & \texttt{penalty\_multiplier} & \texttt{3.5} & Asymmetric base scaling coefficient for violation penalties \\
 Slashing Exponent & $\gamma$ (Eq.~\ref{eq:power_law}) & \texttt{slashing\_exponent} & \texttt{1.8} & Critical power-law exponent escalating repeat infraction penalties \\
 Infraction Severity & $\text{sev} \in [1.0, 5.0]$ (Eq.~\ref{eq:power_law}) & \texttt{severity} (\texttt{apply\_violation\_penalty}) & \texttt{[1.0, 5.0]} & 5-tier categorical risk scale (Level 1.0--1.5 minor to Level 5.0 critical) \\
-Quarantine Threshold & $\tau_{\text{quar}}$ (Eq.~\ref{eq:lifecycle_tiers}) & \texttt{quarantine_threshold} & \texttt{0.20} & Terminal Bayesian trust boundary triggering operational isolation \\
+Quarantine Threshold & $\tau_{\text{quar}}$ (Eq.~\ref{eq:lifecycle_tiers}) & \texttt{quarantine\_threshold} & \texttt{0.20} & Terminal Bayesian trust boundary triggering operational isolation \\
 Restricted Boundary & $\tau_{\text{restr}}$ (Eq.~\ref{eq:lifecycle_tiers}) & \texttt{determine\_status} boundary & \texttt{0.40} & Lower-water threshold requiring human-in-the-loop (HITL) authorization \\
 Minor Glitch Register & $M_{\text{thresh}}$ (Sec.~\ref{sec:strike_recovery}) & \texttt{minor\_infraction\_threshold} & \texttt{3} & Transient fault buffer capacity before formal strike escalation \\
 Active Recovery Window & $W_{\text{recovery}}$ (Sec.~\ref{sec:strike_recovery}) & \texttt{recovery\_clean\_window} & \texttt{20} & Compliant streak window required to decrement active strike counter $v_a$ \\
 Stripe Lock Buckets & $B$ (Eq.~\ref{eq:striped_hash}) & \texttt{num\_locks} & \texttt{64} & Independent reentrant lock array shards eliminating global bottlenecks \\
 Sliding Memory Window & $W_{\text{RAM}}$ (Sec.~\ref{sec:concurrency}) & Buffer leaf capacity & \texttt{5,000} & Active resident Merkle leaves bounded to strict $\mathcal{O}(1)$ heap RAM \\
-Rolling Epoch Seal & $S_{\text{epoch}}$ (Sec.~\ref{sec:concurrency}) & \texttt{epoch\_seal_size} & \texttt{1,000} & Checkpoint frequency committing intermediate Merkle root to SQLite WAL \\
+Rolling Epoch Seal & $S_{\text{epoch}}$ (Sec.~\ref{sec:concurrency}) & \texttt{epoch\_seal\_size} & \texttt{1,000} & Checkpoint frequency committing intermediate Merkle root to SQLite WAL \\
 \bottomrule
 \end{tabular}%
 }
