@@ -160,7 +160,7 @@
 ### [8] PentestGPT: An LLM-empowered Automatic Penetration Testing Framework
 * **Authors:** Gelei Deng, Yi Liu, Víctor Mayoral-Vilches, Peng Liu, Yuekang Li, Yuan Zhang, Yang Liu (Nanyang Technological University)
 * **Venue:** *33rd USENIX Security Symposium (USENIX Security 2024)*
-* **Preprint:** arXiv:2308.06782
+* **DOI / arXiv:** [arXiv:2308.06782](https://arxiv.org/abs/2308.06782)
 * **Verified GitHub Repository:** [GreyDGL/PentestGPT](https://github.com/GreyDGL/PentestGPT)
 * **Strategic Role in DualTrust:** Concrete realization of autonomous agents capable of chaining multi-stage system-level exploits.
 * **DualTrust Delta:** Demonstrates that static authorization models fail against autonomous exploit chaining, justifying DualTrust's cumulative lifetime infraction accumulator and instant streak resets.
@@ -169,7 +169,8 @@
   title={{PentestGPT}: An {LLM}-empowered Automatic Penetration Testing Framework},
   author={Deng, Gelei and Liu, Yi and Mayoral-Vilches, V{\'\i}ctor and Liu, Peng and Li, Yuekang and Zhang, Yuan and Liu, Yang},
   booktitle={33rd USENIX Security Symposium (USENIX Security 24)},
-  year={2024}
+  year={2024},
+  doi={10.48550/arxiv.2308.06782}
 }
 ```
 
@@ -254,20 +255,18 @@
 
 ### [13] Prompt Infection: LLM-to-LLM Prompt Injection within Multi-agent Systems
 * **Authors:** Dong-Hyun Lee, Mo Tiwari, Brando Miranda
-* **Venue:** *Lecture Notes in Computer Science (LNCS)*, Springer, 2026 / arXiv:2410.07283
-* **DOI:** [10.1007/978-3-032-16092-8_28](https://doi.org/10.1007/978-3-032-16092-8_28)
-* **Verified GitHub Repository:** [sunyinggang/LLM-Agent-Security-Survey](https://github.com/sunyinggang/LLM-Agent-Security-Survey)
+* **Venue:** *arXiv preprint*, arXiv:2410.07283, 2024 / *LNCS (Springer)*
+* **DOI / arXiv:** [10.48550/arxiv.2410.07283](https://doi.org/10.48550/arxiv.2410.07283) | [arXiv:2410.07283](https://arxiv.org/abs/2410.07283)
+* **Curated Community Tracking Repository:** [kagnlp/Awesome-Agentic-Security](https://github.com/kagnlp/Awesome-Agentic-Security) *(Tracked under Multi-Agent Prompt Injection Vectors; no standalone official code repository released by authors)*
 * **Strategic Role in DualTrust:** Mathematical modeling of epidemic prompt infection transmission rates in multi-agent swarms.
 * **DualTrust Delta:** Provides the theoretical epidemic baseline against which DualTrust's threshold isolation mechanism is benchmarked.
 ```bibtex
-@inproceedings{lee2024prompt,
+@article{lee2024prompt,
   title={Prompt Infection: {LLM}-to-{LLM} Prompt Injection within Multi-agent Systems},
   author={Lee, Dong-Hyun and Tiwari, Mo and Miranda, Brando},
-  booktitle={Lecture Notes in Computer Science},
-  pages={450--468},
-  year={2026},
-  publisher={Springer},
-  doi={10.1007/978-3-032-16092-8_28}
+  journal={arXiv preprint arXiv:2410.07283},
+  year={2024},
+  doi={10.48550/arxiv.2410.07283}
 }
 ```
 
