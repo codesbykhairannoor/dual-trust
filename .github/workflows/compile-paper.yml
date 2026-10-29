@@ -5,12 +5,17 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build_latex:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Compile JAIR Paper PDF
         uses: xu-cheng/latex-action@v3
@@ -24,3 +29,13 @@ jobs:
         with:
           name: DualTrust_JAIR_Submission_Paper
           path: paper/jair/main.pdf
+
+      - name: Deploy PDF to GitHub Branch
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -B pdf-build
+          cp paper/jair/main.pdf DualTrust_JAIR_Paper.pdf
+          git add -f DualTrust_JAIR_Paper.pdf
+          git commit -m "chore(pdf): publish compiled JAIR paper PDF"
+          git push -f origin pdf-build
