@@ -32,6 +32,21 @@
 \usepackage{algorithmic}
 \usepackage{algorithm}
 \usepackage{graphicx}
+% Resilient graphics wrapper: avoids Overleaf hang if figures are not yet uploaded
+\makeatletter
+\let\orig@includegraphics\includegraphics
+\renewcommand{\includegraphics}[2][]{%
+  \IfFileExists{#2}{%
+    \orig@includegraphics[#1]{#2}%
+  }{%
+    \IfFileExists{figures/#2}{%
+      \orig@includegraphics[#1]{figures/#2}%
+    }{%
+      \framebox{\rule{0pt}{3.5cm}\parbox{0.88\linewidth}{\centering\vspace{1cm}\textbf{[Figure File: #2]}\\\vspace{4pt}\small\textit{Upload the `figures/` folder to Overleaf to display this diagram.}\vspace{1cm}}}%
+    }%
+  }%
+}
+\makeatother
 \usepackage{textcomp}
 \usepackage{xcolor}
 \usepackage{booktabs}
