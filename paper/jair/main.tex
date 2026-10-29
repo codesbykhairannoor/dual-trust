@@ -59,18 +59,6 @@
 
 \newtheorem{invariant}{Security Invariant}
 
-% Force red line numbers on the first page as well during review mode
-\makeatletter
-\fancypagestyle{firstpagestyle}{%
-  \fancyhf{}%
-  \if@ACM@review
-    \fancyhead[L]{\ACM@linecountL}%
-    \fancyhead[R]{\ACM@linecountR}%
-  \fi
-  \fancyfoot[RO,LE]{\footnotesize \@journalName, Vol. \@acmVolume, Article \@acmArticle. Publication date: \@acmPubDate.}%
-}
-\makeatother
-
 \begin{document}
 
 \title[DualTrust: Asymmetric Bayesian Reputation and Cryptographic Gating]{DualTrust: Asymmetric Bayesian Reputation and Cryptographic Gating for Autonomous AI Agents}

@@ -295,10 +295,6 @@
 
   \fancypagestyle{firstpagestyle}{%
     \fancyhf{}%
-    \if@ACM@review
-      \fancyhead[L]{\ACM@linecountL}%
-      \fancyhead[R]{\ACM@linecountR}%
-    \fi
     \fancyfoot[RO,LE]{\footnotesize \@journalName, Vol.
       \@acmVolume, Article \@acmArticle. Publication date: \@acmPubDate.}%
   }%      
