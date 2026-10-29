@@ -1,0 +1,26 @@
+name: Compile JAIR Paper
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build_latex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile JAIR Paper PDF
+        uses: xu-cheng/latex-action@v3
+        with:
+          root_file: main.tex
+          working_directory: paper/jair
+          args: -pdf -interaction=nonstopmode
+
+      - name: Upload Compiled Paper PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: DualTrust_JAIR_Submission_Paper
+          path: paper/jair/main.pdf
