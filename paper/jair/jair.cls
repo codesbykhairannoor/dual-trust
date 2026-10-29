@@ -11,13 +11,13 @@
 % --- JAIR Customizations ---
 \RequirePackage{textcase}
 
-\usepackage[
-    type={CC},
-    modifier={by},
-    version={4.0},
-    imagemodifier={-88x31},
-    % imagemodifier={-80x15},
-]{doclicense}
+% \usepackage[
+%     type={CC},
+%     modifier={by},
+%     version={4.0},
+%     imagemodifier={-88x31},
+%     % imagemodifier={-80x15},
+% ]{doclicense}
 
 % Optional: remove ACM reference formatting
 % \settopmatter{printacmref=false}
@@ -36,12 +36,7 @@
 %% JAIR Copyright Block, do Not Change
 
 \gdef\@copyrightpermission{
-  \begin{minipage}{0.2\columnwidth}
-   \href{https://creativecommons.org/licenses/by/4.0/}{\doclicenseImage}
-  \end{minipage}\hfill
-  \begin{minipage}{0.8\columnwidth}
-   \href{https://creativecommons.org/licenses/by/4.0/}{This work is licensed under a Creative Commons Attribution International 4.0 License.}
-  \end{minipage}
+  \noindent\href{https://creativecommons.org/licenses/by/4.0/}{This work is licensed under a Creative Commons Attribution International 4.0 License.}
   \vspace{5pt}
 }
 

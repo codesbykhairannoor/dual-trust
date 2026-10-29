@@ -1,0 +1,3 @@
+$pdflatex = 'pdflatex --halt-on-error %O %S';
+$biber = 'biber %O %S';
+$max_repeat = 3;
