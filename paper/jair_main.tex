@@ -1,14 +1,34 @@
-\documentclass[acmsmall,screen,review,nonacm]{acmart}
+\documentclass[manuscript, screen, review]{jair}
 
-% Ensure compatibility with ACM / JAIR guidelines
-\settopmatter{printfolios=true,printacmref=false}
-\setcopyright{none}
-\renewcommand\footnotetextcopyrightpermission[1]{}
-\pagestyle{plain}
+\setcopyright{cc}
+\acmDOI{10.1613/jair.1.xxxxx}
+
+%%
+\JAIRAE{Insert JAIR AE Name}
+\JAIRTrack{} % Insert JAIR Track Name only if part of a special track
+\acmVolume{XX}
+\acmArticle{YY}
+\acmMonth{MM}
+\acmYear{2026}
+
+\RequirePackage[
+  datamodel=acmdatamodel,
+  style=acmauthoryear,
+  backend=biber,
+  giveninits=true,
+  uniquename=init
+  ]{biblatex}
+
+\renewcommand*{\bibopenbracket}{(}
+\renewcommand*{\bibclosebracket}{)}
+
+%% For managing citations, use BibLaTeX with the acmauthoryear style.
+\addbibresource{references.bib}
 
 % Math and utility packages
+\usepackage{amsmath}
 \let\Bbbk\relax
-\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amssymb,amsfonts}
 \usepackage{algorithmic}
 \usepackage{algorithm}
 \usepackage{graphicx}
@@ -19,33 +39,31 @@
 \usepackage{enumitem}
 \usepackage{balance}
 
-\newtheorem{invariant}{Security Invariant}
+\hypersetup{colorlinks=true, linkcolor=black, citecolor=black, urlcolor=blue}
 
-% Hyperlink styling: make internal links and citations clean black instead of default red
-\hypersetup{
-  colorlinks=true,
-  linkcolor=black,
-  citecolor=black,
-  urlcolor=blue
-}
+\newtheorem{invariant}{Security Invariant}
 
 \begin{document}
 
 \title[DualTrust: Asymmetric Bayesian Governance for Autonomous Agents]{DualTrust: An Ultra-Low-Latency Asymmetric Bayesian Governance Framework for Resilient Autonomous Agent Containment in Cyber-Physical Systems}
 
 \author{Khairan Noor Fadhlillah}
+\authornote{Corresponding Author.}
 \email{khairan.noor.f@students.esqbs.ac.id}
 \affiliation{%
-  \institution{Department of Information Systems, Universitas Ary Ginanjar (ESQ Business School)}
+  \institution{Universitas Ary Ginanjar (ESQ Business School)}
+  \department{Department of Information Systems}
   \city{Jakarta}
   \country{Indonesia}
 }
 
+\renewcommand{\shortauthors}{Fadhlillah}
+
 \begin{abstract}
-The proliferation of Ambient Wearable Intelligence (AWI) ecosystems, spanning augmented reality glasses, smartwatches, and pervasive edge IoT actuators, is fundamentally transitioning human-AI interaction from explicit tactile commands to continuous, implicit background tool delegation. In these ambient environments, autonomous Large Language Model (LLM) agents are granted operational authority to invoke external APIs, reserve financial micro-quotas, and control physical actuators. However, existing safety guardrails depend on secondary LLM-as-a-judge classifiers that introduce prohibitive runtime latencies (400--850\,ms) and recurring token expenses, while static role-based access control fails against continuous behavioral drift, memory backdoors, and interleaved salami-slicing exploits. We present \textbf{DualTrust}, an ultra-low-latency asymmetric Bayesian governance framework engineered specifically for autonomous multi-agent cyber-physical containment. DualTrust enforces a decoupled principal-agent architecture that strictly isolates Human Principal Accountable Credit from Bayesian Agent Operational Standing. Agent behavior is continuously modulated via an asymmetric power-law slashing engine ($\Delta\beta \propto (\text{sev} \cdot c^2) \cdot v_a^{1.8}$) with instantaneous clean-streak reset, deterministic SHA-256 64-bucket striped concurrency locks, atomically locked rollback refunds, and an $\mathcal{O}(1)$ RAM sliding-window RFC~6962 Merkle audit ledger with rolling epoch seals that bounds active memory consumption by committing historical roots to persistent storage. Evaluated across 176 automated invariant tests and 10,000-cycle Monte Carlo attack simulations, DualTrust makes deterministic authorization verdicts in a median latency of \textbf{47.10\,$\mu$s} in-memory (mean 63.16\,$\mu$s, tail p99 287.10\,$\mu$s) and \textbf{155.80\,$\mu$s} under persistent SQLite WAL disk transactions, with end-to-end Python decorator wrappers executing in median 60.70\,$\mu$s (async) and 88.30\,$\mu$s (sync) without external API calls. Compared against state-of-the-art LLM guardrails, DualTrust achieves over \textbf{6,600$\times$} lower latency (and over \textbf{32$\times$} to \textbf{50$\times$} lower latency than localized AST validators), by policy construction blocks Sybil defamation against collusive probation swarms, and provides tamper-evident, append-only audit durability with RFC~6962 inclusion verification, establishing a practical, foundational governance runtime for trustworthy ambient intelligence.
+The proliferation of Ambient Wearable Intelligence (AWI) ecosystems, spanning augmented reality glasses, smartwatches, and pervasive edge IoT actuators, is fundamentally transitioning human-AI interaction from explicit tactile commands to continuous, implicit background tool delegation. In these ambient environments, autonomous Large Language Model (LLM) agents are granted operational authority to invoke external APIs, reserve financial micro-quotas, and control physical actuators. However, existing safety guardrails depend on secondary LLM-as-a-judge classifiers that introduce prohibitive runtime latencies (400--850\,ms) and recurring token expenses, while static role-based access control fails against continuous behavioral drift, memory backdoors, and interleaved salami-slicing exploits. We present \textbf{DualTrust}, an ultra-low-latency asymmetric Bayesian governance framework engineered specifically for autonomous multi-agent cyber-physical containment. DualTrust enforces a decoupled principal-agent architecture that strictly isolates Human Principal Accountable Credit from Bayesian Agent Operational Standing. Agent behavior is continuously modulated via an asymmetric power-law slashing engine ($\Delta\beta \propto (\text{sev} \cdot c^2) \cdot v_a^{1.8}$) with instantaneous clean-streak reset, deterministic SHA-256 64-bucket striped concurrency locks, atomically locked rollback refunds, and an $\mathcal{O}(1)$ RAM sliding-window RFC~6962 Merkle audit ledger with rolling epoch seals that bounds active memory consumption by committing historical roots to persistent storage. Evaluated across 176 automated invariant tests and 10,000-cycle Monte Carlo attack simulations, DualTrust makes deterministic authorization verdicts in a median latency of \textbf{47.10\,$\mu} in-memory (mean 63.16\,$\mu, tail p99 287.10\,$\mu) and \textbf{155.80\,$\mu} under persistent SQLite WAL disk transactions, with end-to-end Python decorator wrappers executing in median 60.70\,$\mu (async) and 88.30\,$\mu (sync) without external API calls. Compared against state-of-the-art LLM guardrails, DualTrust achieves over \textbf{6,600$\times$} lower latency (and over \textbf{32$\times$} to \textbf{50$\times$} lower latency than localized AST validators), by policy construction blocks Sybil defamation against collusive probation swarms, and provides tamper-evident, append-only audit durability with RFC~6962 inclusion verification, establishing a practical, foundational governance runtime for trustworthy ambient intelligence.
 \end{abstract}
 
-\keywords{Autonomous Agents, Multi-Agent Governance, Bayesian Trust Systems, Cyber-Physical Systems, Salami-Slicing Resistance, Merkle Audit Trails, Zero-Trust Architecture}
+%% JAIR Note: Do not include ACM CCS Concepts or Keywords
 
 \maketitle
 
@@ -110,7 +128,7 @@ These findings indicate that prompt engineering and post-hoc instruction tuning 
 \subsection{Bayesian Trust \& Cryptographic Ledgers}
 Probabilistic reputation management has a long history in distributed systems. J{\o}sang and Ismail~\cite{josang2002beta} introduced the \emph{Beta Reputation System}, which models binary feedback with a Beta distribution as a natural conjugate prior with explicit uncertainty handling. Kamvar et al.~\cite{kamvar2003eigentrust} formulated \emph{EigenTrust}, computing global trust values in peer-to-peer file-sharing networks. Douceur~\cite{douceur2002sybil} showed that Sybil attacks cannot be resisted in open systems without a trusted identity authority or resource-cost mechanism. In cryptographic auditing, Laurie et al.~\cite{laurie2013certificate} standardized \emph{RFC 6962 (Certificate Transparency)}, defining prefix-separated Merkle hash trees that prevent second-preimage attacks. Melara et al.~\cite{melara2015coniks} introduced \emph{CONIKS}, establishing epoch-sealed verifiable key directories.
 
-DualTrust adapts these classical constructions into a low-latency, asymmetric governance runtime tailored for AI agent ecosystems.
+In the AI multiagent literature, Wang et al.~\cite{wang2011probabilistic} developed probabilistic trust representations based on evidence certainty in decentralized marketplaces, while Booth and Hunter~\cite{booth2018trust} formalized trust as an epistemic precursor to belief revision in agent communication. However, these systems assume symmetric evidence integration and do not address cyber-physical tool containment or sub-millisecond execution constraints. DualTrust adapts these classical constructions into an asymmetric, power-law slashing governance runtime tailored for modern autonomous agent ecosystems.
 
 \section{Threat Model \& Security Invariants}
 \label{sec:threat_model}
@@ -669,10 +687,95 @@ We have presented \textbf{DualTrust}, an ultra-low-latency asymmetric Bayesian g
 \section*{Declaration of Generative AI and AI-Assisted Engineering}
 In compliance with JAIR and ACM publication ethics policies regarding AI-assisted research, software engineering, and scientific writing, the author discloses that this framework, encompassing its mathematical formalization, invariant test architectures, and manuscript composition, was developed through an interactive human-in-the-loop pair-programming paradigm utilizing agentic AI coding systems (Google DeepMind / Antigravity). The concurrency properties, threat model boundaries, and mathematical arguments were iteratively cross-examined through a multi-model adversarial red-teaming protocol incorporating frontier models (including Google Gemini 2.5 Flash, Anthropic Claude 3.5 Sonnet, Meta Llama 3.3 70B, Alibaba Qwen 2.5 Coder, DeepSeek V3, and Amazon Nova Lite). All source code implementations, mathematical derivations, and benchmark measurements were executed, verified, and audited on local hardware under the direct supervision of the human author, who assumes complete responsibility for the scientific integrity, empirical results, and conclusions of this paper.
 
-\section*{Acknowledgment}
+\begin{acks}
 The author thanks the open-source cybersecurity community and the multi-model automated adversarial auditing frameworks whose red-teaming stress tests helped harden the concurrency and mathematical invariants of the DualTrust governance engine.
+\end{acks}
 
-\bibliographystyle{ACM-Reference-Format}
-\bibliography{references}
+\printbibliography
+
+\appendix
+
+\section{Reproducibility Checklist for JAIR}
+
+Select the answers that apply to your research -- one per item. 
+
+\subsection*{All articles:}
+
+\begin{enumerate}
+    \item All claims investigated in this work are clearly stated. 
+    [yes]
+    \item Clear explanations are given how the work reported substantiates the claims. 
+    [yes]
+    \item Limitations or technical assumptions are stated clearly and explicitly. 
+    [yes]
+    \item Conceptual outlines and/or pseudo-code descriptions of the AI methods introduced in this work are provided, and important implementation details are discussed. 
+    [yes]
+    \item Motivation is provided for all design choices, including algorithms, implementation choices, parameters, data sets and experimental protocols beyond metrics.
+    [yes]
+\end{enumerate}
+
+\subsection*{Articles containing theoretical contributions:}
+Does this paper make theoretical contributions? 
+[yes] 
+
+If yes, please complete the list below.
+
+\begin{enumerate}
+    \item All assumptions and restrictions are stated clearly and formally. 
+    [yes]
+    \item All novel claims are stated formally (e.g., in theorem statements). 
+    [yes]
+    \item Proofs of all non-trivial claims are provided in sufficient detail to permit verification by readers with a reasonable degree of expertise (e.g., that expected from a PhD candidate in the same area of AI). [yes]
+    \item Complex formalism, such as definitions or proofs, is motivated and explained clearly.
+    [yes]
+    \item The use of mathematical notation and formalism serves the purpose of enhancing clarity and precision; gratuitous use of mathematical formalism (i.e., use that does not enhance clarity or precision) is avoided.
+    [yes]
+    \item Appropriate citations are given for all non-trivial theoretical tools and techniques. 
+    [yes]
+\end{enumerate}
+
+\subsection*{Articles reporting on computational experiments:}
+Does this paper include computational experiments? [yes]
+
+If yes, please complete the list below.
+\begin{enumerate}
+    \item All source code required for conducting experiments is included in an online appendix or will be made publicly available upon publication of the paper. The online appendix follows best practices for source code readability and documentation as well as for long-term accessibility.
+    [yes]
+    \item The source code comes with a license that allows free usage for reproducibility purposes.
+    [yes]
+    \item The source code comes with a license that allows free usage for research purposes in general.
+    [yes]
+    \item Raw, unaggregated data from all experiments is included in an online appendix or will be made publicly available upon publication of the paper. The online appendix follows best practices for long-term accessibility.
+    [yes]
+    \item The unaggregated data comes with a license that allows free usage for reproducibility purposes.
+    [yes]
+    \item The unaggregated data comes with a license that allows free usage for research purposes in general.
+    [yes]
+    \item If an algorithm depends on randomness, then the method used for generating random numbers and for setting seeds is described in a way sufficient to allow replication of results. 
+    [yes]
+    \item The execution environment for experiments, the computing infrastructure (hardware and software) used for running them, is described, including GPU/CPU makes and models; amount of memory (cache and RAM); make and version of operating system; names and versions of relevant software libraries and frameworks. 
+    [yes]
+    \item The evaluation metrics used in experiments are clearly explained and their choice is explicitly motivated. 
+    [yes]
+    \item The number of algorithm runs used to compute each result is reported. 
+    [yes]
+    \item Reported results have not been `cherry-picked'' by silently ignoring unsuccessful or unsatisfactory experiments. 
+    [yes]
+    \item Analysis of results goes beyond single-dimensional summaries of performance (e.g., average, median) to include measures of variation, confidence, or other distributional information. 
+    [yes]
+    \item All (hyper-) parameter settings for the algorithms/methods used in experiments have been reported, along with the rationale or method for determining them. 
+    [yes]
+    \item The number and range of (hyper-) parameter settings explored prior to conducting final experiments have been indicated, along with the effort spent on (hyper-) parameter optimisation. 
+    [NA]
+    \item Appropriately chosen statistical hypothesis tests are used to establish statistical significance in the presence of noise effects.
+    [yes]
+\end{enumerate}
+
+\subsection*{Articles using data sets:}
+Does this work rely on one or more data sets (possibly obtained from a benchmark generator or similar software artifact)? 
+[no]
+
+\subsection*{Explanations on any of the answers above (optional):}
+All source code and benchmark test harnesses are open-sourced under the Apache-2.0 license at \url{https://github.com/codesbykhairannoor/dual-trust} and published on PyPI as \texttt{dualtrust} (v0.4.1). Deterministic pseudorandom seeds (e.g., seed 42) and local AMD Ryzen 5 hardware specifications are documented in Section~\ref{sec:evaluation}.
 
 \end{document}
