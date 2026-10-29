@@ -26,7 +26,7 @@
 \addbibresource{references.bib}
 
 % Disable microtype font expansion to compile 5x-10x faster within Overleaf Free limits
-\microtypesetup{expansion=false}
+\microtypesetup{activate=false}
 
 % Math and utility packages
 \usepackage{amsmath}
@@ -408,6 +408,7 @@ Real-time cyber-physical ecosystems cannot tolerate global locks or high-latency
 \begin{figure}[!t]
 \centering
 \includegraphics[width=0.88\linewidth]{figures/figure1_salami_slicing.pdf}
+\Description{Bayesian trust standing dynamics under adversarial salami-slicing and Trojan sleeper attacks.}
 \caption{Bayesian Trust Standing dynamics under adversarial salami-slicing and Trojan sleeper attacks. An oscillating salami-slicer (4 compliant actions + 1 moderate infraction at $\text{sev} = 2.0$) drops to Restricted status ($T \le 0.40$) by step 10 ($T = 0.2638$, Cycle 2) and triggers full operational quarantine ($T < 0.20$) at step 15 ($T = 0.1300$, Cycle 3), while a Trojan sleeper agent attempting a critical protocol trespass ($\text{sev} = 5.0$) at step 40 is immediately isolated ($T = 0.1964$, forced quarantine).}
 \label{fig:salami}
 \end{figure}
@@ -534,6 +535,7 @@ Algorithm~\ref{alg:lifecycle} (lines 22--26) provides tamper-evident audit durab
 \begin{figure}[!t]
 \centering
 \includegraphics[width=0.88\linewidth]{figures/figure2_sybil_immunity.pdf}
+\Description{Sybil Defamation Immunity verification under collusive probation bot swarm.}
 \caption{Sybil Defamation Immunity verification. When an established verified agent ($T = 0.98$) is targeted by 50 collusive probation bot reports, DualTrust applies an exact 0.0 penalty, preserving verified standing. Conversely, naive unweighted Beta systems collapse below 0.10.}
 \label{fig:sybil}
 \end{figure}
@@ -610,6 +612,7 @@ Rolling Epoch Seal & $S_{\text{epoch}}$ (Sec.~\ref{sec:concurrency}) & \texttt{e
 \begin{figure}[!t]
 \centering
 \includegraphics[width=0.88\linewidth]{figures/figure3_latency_comparison.pdf}
+\Description{Runtime policy evaluation latency comparison across guardrail architectures.}
 \caption{Runtime policy evaluation latency comparison plotted on a logarithmic scale. DualTrust achieves a median policy evaluation latency of 47.10\,$\mu$s under in-memory core gating (88.30\,$\mu$s under the synchronous @gate decorator wrapper, and 155.80\,$\mu$s under persistent SQLite WAL transactions). Median-to-median, this is roughly 8,000$\times$ to 17,000$\times$ faster than the published neural guardrail figures and 32$\times$ to 60$\times$ faster than local AST validation (core and wrapper tiers).}
 \label{fig:latency}
 \end{figure}
