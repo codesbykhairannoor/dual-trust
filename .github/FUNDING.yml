@@ -1,0 +1,13 @@
+# GitHub Funding Configuration
+# Documentation: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
+
+# Official GitHub Sponsors username
+github: [codesbykhairannoor]
+
+# Popular international platforms (uncomment and replace with your username)
+# ko_fi: codesbykhairannoor
+# buy_me_a_coffee: codesbykhairannoor
+# patreon: codesbykhairannoor
+
+# Custom donation links (e.g., Saweria, Trakteer, PayPal)
+# custom: ['https://saweria.co/username', 'https://trakteer.id/username', 'https://paypal.me/username']
