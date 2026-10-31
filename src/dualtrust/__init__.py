@@ -57,7 +57,7 @@ from dualtrust.storage import MemoryStorage, SQLiteStorage, StorageBackend
 from dualtrust.watchdog import AgentWatchdog
 
 
-__version__ = "0.4.3"
+__version__ = "0.4.4"
 __all__ = [
     # Core Engine & Cryptographic Ledger
     "DualTrust",

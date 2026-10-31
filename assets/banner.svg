@@ -1,147 +1,109 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" width="100%" height="100%">
-  <defs>
-    <!-- Background Gradient -->
-    <linearGradient id="bannerBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0F172A" />
-      <stop offset="50%" stop-color="#0A0F1D" />
-      <stop offset="100%" stop-color="#050811" />
-    </linearGradient>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" width="960" height="280">
+  <!-- Card Background -->
+  <rect width="960" height="280" rx="16" fill="#0A0E17" />
+  <rect x="1" y="1" width="958" height="278" rx="15" fill="none" stroke="#1E293B" stroke-width="1.2" />
 
-    <!-- Glow Filters -->
-    <filter id="bCoreGlow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="6" result="blur" />
-      <feComposite in="SourceGraphic" in2="blur" operator="over" />
-    </filter>
+  <!-- ======================================================== -->
+  <!-- LEFT: MINIMALIST FLAT HEX-VAULT EMBLEM (CENTERED)        -->
+  <!-- ======================================================== -->
+  <g transform="translate(145, 140) scale(0.60) translate(-256, -256)">
+    <!-- Left Vault Wing: Human Credential (Cobalt #2563EB) -->
+    <polygon points="
+      136,176 
+      248,111 
+      248,206 
+      200,234 
+      200,278 
+      248,306 
+      248,401 
+      136,336" 
+      fill="#2563EB" />
 
-    <filter id="bIntenseGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="12" result="blur1" />
-      <feMerge>
-        <feMergeNode in="blur1" />
-        <feMergeNode in="SourceGraphic" />
-      </feMerge>
-    </filter>
+    <!-- Right Vault Wing: Agent Reputation (Titanium #FFFFFF) -->
+    <polygon points="
+      376,176 
+      264,111 
+      264,206 
+      312,234 
+      312,278 
+      264,306 
+      264,401 
+      376,336" 
+      fill="#FFFFFF" />
 
-    <!-- Gradients -->
-    <linearGradient id="bHumanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38BDF8" />
-      <stop offset="100%" stop-color="#0284C7" />
-    </linearGradient>
-
-    <linearGradient id="bAgentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#C084FC" />
-      <stop offset="100%" stop-color="#7C3AED" />
-    </linearGradient>
-
-    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#38BDF8" />
-      <stop offset="50%" stop-color="#818CF8" />
-      <stop offset="100%" stop-color="#C084FC" />
-    </linearGradient>
-
-    <linearGradient id="bGateBorder" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0284C7" />
-      <stop offset="100%" stop-color="#9333EA" />
-    </linearGradient>
-  </defs>
-
-  <!-- Banner Outer Card -->
-  <rect width="960" height="280" rx="16" fill="url(#bannerBg)" stroke="#1E293B" stroke-width="1.2" />
-
-  <!-- Ambient Light Halos -->
-  <circle cx="150" cy="140" r="85" fill="#0284C7" opacity="0.15" filter="url(#bIntenseGlow)" />
-  <circle cx="210" cy="140" r="85" fill="#7C3AED" opacity="0.15" filter="url(#bIntenseGlow)" />
-  <circle cx="780" cy="80" r="130" fill="#38BDF8" opacity="0.04" filter="url(#bIntenseGlow)" />
-
-  <!-- ========================================== -->
-  <!-- LEFT: DUAL INTERLOCKING SHIELDS EMBLEM -->
-  <!-- ========================================== -->
-  <g transform="translate(50, 24) scale(0.82)">
-    <!-- Outer Vault Outline -->
-    <path d="M164 24 L254 60 C254 160 212 240 164 286 C116 240 74 160 74 60 Z"
-          fill="#070C16" fill-opacity="0.7" stroke="url(#titleGrad)" stroke-width="1.6" stroke-dasharray="6 4" opacity="0.8" />
-
-    <!-- Left Pillar (Human Credit) -->
-    <path d="M152 76 L100 106 L100 200 L152 236 L152 196 L124 176 L124 132 L152 116 Z"
-          fill="url(#bHumanGrad)" filter="url(#bCoreGlow)" />
-
-    <!-- Right Pillar (Agent Standing) -->
-    <path d="M176 76 L228 106 L228 200 L176 236 L176 196 L204 176 L204 132 L176 116 Z"
-          fill="url(#bAgentGrad)" filter="url(#bCoreGlow)" />
-
-    <!-- Center Security Gate & Lock -->
-    <polygon points="164,100 178,112 164,124 150,112" fill="#F8FAFC" />
-    <polygon points="164,188 178,200 164,212 150,200" fill="#F8FAFC" />
-
-    <polygon points="164,138 186,156 164,174 142,156" fill="#0F172A" stroke="url(#bGateBorder)" stroke-width="2" />
-    <polygon points="164,146 174,156 164,166 154,156" fill="url(#titleGrad)" />
-    <circle cx="164" cy="156" r="2.5" fill="#FFFFFF" />
-
-    <!-- Connection Links -->
-    <line x1="124" y1="132" x2="150" y2="112" stroke="#38BDF8" stroke-width="1.2" opacity="0.7" />
-    <line x1="204" y1="132" x2="178" y2="112" stroke="#C084FC" stroke-width="1.2" opacity="0.7" />
-    <line x1="124" y1="176" x2="150" y2="200" stroke="#38BDF8" stroke-width="1.2" opacity="0.7" />
-    <line x1="204" y1="176" x2="178" y2="200" stroke="#C084FC" stroke-width="1.2" opacity="0.7" />
+    <!-- Center Verification Core: Solid Cryptographic Core Accent (#38BDF8) -->
+    <polygon points="
+      256,228 
+      284,244 
+      284,268 
+      256,284 
+      228,268 
+      228,244" 
+      fill="#38BDF8" />
   </g>
 
-  <!-- ========================================== -->
-  <!-- RIGHT: FORMAL RESEARCH TYPOGRAPHY -->
-  <!-- ========================================== -->
-  
-  <!-- Main Title -->
-  <text x="320" y="98" font-family="'Inter', system-ui, -apple-system, sans-serif" font-size="52" font-weight="900" letter-spacing="-1">
-    <tspan fill="#F8FAFC">Dual</tspan><tspan fill="url(#titleGrad)">Trust</tspan>
+  <!-- Vertical Subtle Divider -->
+  <line x1="264" y1="46" x2="264" y2="234" stroke="#1E293B" stroke-width="1" />
+
+  <!-- ======================================================== -->
+  <!-- RIGHT: PRECISION ENGINEERING TYPOGRAPHY                  -->
+  <!-- ======================================================== -->
+
+  <!-- Title: Flat high-contrast typography -->
+  <text x="296" y="92" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif" font-size="46" font-weight="900" letter-spacing="-0.5">
+    <tspan fill="#FFFFFF">Dual</tspan><tspan fill="#3B82F6">Trust</tspan>
   </text>
 
-  <!-- Formal Architecture Badge -->
-  <g transform="translate(620, 62)">
-    <rect width="180" height="24" rx="6" fill="#1E293B" stroke="url(#titleGrad)" stroke-width="1" />
-    <text x="90" y="16" font-family="'Inter', system-ui, sans-serif" font-size="10.5" font-weight="700" fill="#BAE6FD" text-anchor="middle" letter-spacing="1.2">
-      RUNTIME GATEKEEPER
-    </text>
-  </g>
-
-  <!-- Paper-Accurate Subtitle -->
-  <text x="322" y="136" font-family="'Inter', system-ui, -apple-system, sans-serif" font-size="16.5" font-weight="500" fill="#94A3B8" letter-spacing="0.1">
-    Asymmetric Bayesian Reputation &amp; Cryptographic Gating for Autonomous AI Agents
+  <!-- Tagline -->
+  <text x="298" y="122" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', Roboto, sans-serif" font-size="12" font-weight="700" fill="#94A3B8" letter-spacing="1.5">
+    ASYMMETRIC REPUTATION &amp; RUNTIME GATEKEEPER FOR AI AGENTS
   </text>
 
-  <!-- 4 Feature Specification Pills -->
-  <g transform="translate(322, 172)">
-    <!-- Pill 1: Latency -->
+  <!-- Specification Pills -->
+  <g transform="translate(298, 146)">
+    <!-- Pill 1: Merkle Tree -->
     <g transform="translate(0, 0)">
-      <rect width="132" height="30" rx="6" fill="#0B132B" stroke="#0284C7" stroke-width="1" />
-      <text x="66" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#38BDF8" text-anchor="middle">
-        ⚡ 47.10 μs SLA
+      <rect width="144" height="26" rx="6" fill="#111827" stroke="#1F2937" stroke-width="1" />
+      <text x="72" y="17" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#E2E8F0" text-anchor="middle">
+        RFC 6962 Merkle Tree
       </text>
     </g>
 
     <!-- Pill 2: Slashing -->
-    <g transform="translate(144, 0)">
-      <rect width="150" height="30" rx="6" fill="#0B132B" stroke="#6366F1" stroke-width="1" />
-      <text x="75" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#A5B4FC" text-anchor="middle">
-        🛡️ Power-Law γ=1.8
+    <g transform="translate(154, 0)">
+      <rect width="144" height="26" rx="6" fill="#111827" stroke="#1F2937" stroke-width="1" />
+      <text x="72" y="17" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#E2E8F0" text-anchor="middle">
+        Power-Law Slashing v1.8
       </text>
     </g>
 
-    <!-- Pill 3: Merkle Audit -->
-    <g transform="translate(306, 0)">
-      <rect width="144" height="30" rx="6" fill="#0B132B" stroke="#8B5CF6" stroke-width="1" />
-      <text x="72" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#C084FC" text-anchor="middle">
-        🔒 RFC 6962 Merkle
+    <!-- Pill 3: NIST HITL -->
+    <g transform="translate(308, 0)">
+      <rect width="144" height="26" rx="6" fill="#111827" stroke="#1F2937" stroke-width="1" />
+      <text x="72" y="17" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#E2E8F0" text-anchor="middle">
+        NIST SP 800-63B HITL
       </text>
     </g>
 
     <!-- Pill 4: Zero Deps -->
     <g transform="translate(462, 0)">
-      <rect width="134" height="30" rx="6" fill="#0B132B" stroke="#10B981" stroke-width="1" />
-      <text x="67" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#34D399" text-anchor="middle">
-        📦 Pure Python
+      <rect width="144" height="26" rx="6" fill="#111827" stroke="#1F2937" stroke-width="1" />
+      <text x="72" y="17" font-family="system-ui, sans-serif" font-size="10.5" font-weight="600" fill="#E2E8F0" text-anchor="middle">
+        Zero Dependencies
       </text>
     </g>
   </g>
 
-  <!-- Technical Verification Invariant Footer -->
-  <text x="322" y="238" font-family="'SF Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#64748B">
-    <tspan fill="#38BDF8">HumanCredit</tspan>(C_u) &amp; <tspan fill="#C084FC">BayesianStanding</tspan>(T_a) &rarr; <tspan fill="#F8FAFC">Deterministic Authorization Gate</tspan>
-  </text>
+  <!-- Footer Status Line -->
+  <g transform="translate(298, 206)">
+    <!-- Status Dot -->
+    <circle cx="6" cy="6" r="4.5" fill="#10B981" />
+    <text x="18" y="10" font-family="system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#CBD5E1">
+      v0.4.4
+    </text>
+
+    <text x="68" y="10" font-family="system-ui, sans-serif" font-size="11.5" font-weight="400" fill="#64748B">
+      •  Production Ready  •  MIT Licensed  •  Pure Python 3.10+
+    </text>
+  </g>
 </svg>

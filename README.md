@@ -6,7 +6,7 @@
 
 # DualTrust
 
-[![PyPI Version](https://img.shields.io/badge/pypi-v0.4.3-blue.svg)](https://pypi.org/project/dualtrust/)
+[![PyPI Version](https://img.shields.io/badge/pypi-v0.4.4-blue.svg)](https://pypi.org/project/dualtrust/)
 [![Python Version](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-brightgreen.svg)](https://pypi.org)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4%20Tako.id-ff69b4.svg)](https://tako.id/codesbykhai)
