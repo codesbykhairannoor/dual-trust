@@ -2,14 +2,14 @@
   <defs>
     <!-- Background Gradient -->
     <linearGradient id="bannerBg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0B0F19" />
-      <stop offset="50%" stop-color="#080C14" />
-      <stop offset="100%" stop-color="#04060A" />
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="50%" stop-color="#0A0F1D" />
+      <stop offset="100%" stop-color="#050811" />
     </linearGradient>
 
     <!-- Glow Filters -->
-    <filter id="bNeonGlow" x="-20%" y="-20%" width="140%" height="140%">
-      <feGaussianBlur stdDeviation="8" result="blur" />
+    <filter id="bCoreGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6" result="blur" />
       <feComposite in="SourceGraphic" in2="blur" operator="over" />
     </filter>
 
@@ -21,7 +21,7 @@
       </feMerge>
     </filter>
 
-    <!-- Gradients for Pillars & Text -->
+    <!-- Gradients -->
     <linearGradient id="bHumanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#38BDF8" />
       <stop offset="100%" stop-color="#0284C7" />
@@ -29,125 +29,119 @@
 
     <linearGradient id="bAgentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" stop-color="#C084FC" />
-      <stop offset="100%" stop-color="#7E22CE" />
+      <stop offset="100%" stop-color="#7C3AED" />
     </linearGradient>
 
-    <linearGradient id="bDualBridge" x1="0%" y1="0%" x2="100%" y2="0%">
+    <linearGradient id="titleGrad" x1="0%" y1="0%" x2="100%" y2="0%">
       <stop offset="0%" stop-color="#38BDF8" />
-      <stop offset="50%" stop-color="#F1F5F9" />
+      <stop offset="50%" stop-color="#818CF8" />
       <stop offset="100%" stop-color="#C084FC" />
     </linearGradient>
 
-    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#38BDF8" />
-      <stop offset="60%" stop-color="#818CF8" />
-      <stop offset="100%" stop-color="#C084FC" />
-    </linearGradient>
-
-    <linearGradient id="pillBorder" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.5" />
-      <stop offset="100%" stop-color="#9333EA" stop-opacity="0.5" />
+    <linearGradient id="bGateBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#9333EA" />
     </linearGradient>
   </defs>
 
-  <!-- Background -->
-  <rect width="960" height="280" rx="20" fill="url(#bannerBg)" stroke="#1E293B" stroke-width="1.2" />
+  <!-- Banner Outer Card -->
+  <rect width="960" height="280" rx="16" fill="url(#bannerBg)" stroke="#1E293B" stroke-width="1.2" />
 
-  <!-- Background subtle ambient lights -->
-  <circle cx="150" cy="140" r="90" fill="#0284C7" opacity="0.12" filter="url(#bIntenseGlow)" />
-  <circle cx="210" cy="140" r="90" fill="#7E22CE" opacity="0.12" filter="url(#bIntenseGlow)" />
-  <circle cx="780" cy="70" r="140" fill="#6366F1" opacity="0.05" filter="url(#bIntenseGlow)" />
+  <!-- Ambient Light Halos -->
+  <circle cx="150" cy="140" r="85" fill="#0284C7" opacity="0.15" filter="url(#bIntenseGlow)" />
+  <circle cx="210" cy="140" r="85" fill="#7C3AED" opacity="0.15" filter="url(#bIntenseGlow)" />
+  <circle cx="780" cy="80" r="130" fill="#38BDF8" opacity="0.04" filter="url(#bIntenseGlow)" />
 
   <!-- ========================================== -->
-  <!-- LEFT: GEMINI TWINS EMBLEM (CENTER AT X=180, Y=140) -->
+  <!-- LEFT: DUAL INTERLOCKING SHIELDS EMBLEM -->
   <!-- ========================================== -->
-  <g transform="translate(40, 20) scale(0.85)">
-    <!-- Shield Outline -->
+  <g transform="translate(50, 24) scale(0.82)">
+    <!-- Outer Vault Outline -->
     <path d="M164 24 L254 60 C254 160 212 240 164 286 C116 240 74 160 74 60 Z"
-          fill="#050B14" fill-opacity="0.6" stroke="url(#textGrad)" stroke-width="1.8" stroke-dasharray="6 4" opacity="0.75" />
+          fill="#070C16" fill-opacity="0.7" stroke="url(#titleGrad)" stroke-width="1.6" stroke-dasharray="6 4" opacity="0.8" />
 
-    <!-- Top Arch -->
-    <path d="M 104 104 C 132 84, 196 84, 224 104 L 232 90 C 198 70, 130 70, 96 90 Z"
-          fill="url(#bDualBridge)" filter="url(#bNeonGlow)" />
+    <!-- Left Pillar (Human Credit) -->
+    <path d="M152 76 L100 106 L100 200 L152 236 L152 196 L124 176 L124 132 L152 116 Z"
+          fill="url(#bHumanGrad)" filter="url(#bCoreGlow)" />
 
-    <!-- Bottom Arch -->
-    <path d="M 104 204 C 132 224, 196 224, 224 204 L 232 218 C 198 238, 130 238, 96 218 Z"
-          fill="url(#bDualBridge)" filter="url(#bNeonGlow)" />
+    <!-- Right Pillar (Agent Standing) -->
+    <path d="M176 76 L228 106 L228 200 L176 236 L176 196 L204 176 L204 132 L176 116 Z"
+          fill="url(#bAgentGrad)" filter="url(#bCoreGlow)" />
 
-    <!-- Left Human Pillar -->
-    <path d="M 126 94 L 144 106 L 144 202 L 126 214 Z" fill="url(#bHumanGrad)" filter="url(#bNeonGlow)" />
-    <circle cx="135" cy="98" r="3.5" fill="#FFFFFF" />
+    <!-- Center Security Gate & Lock -->
+    <polygon points="164,100 178,112 164,124 150,112" fill="#F8FAFC" />
+    <polygon points="164,188 178,200 164,212 150,200" fill="#F8FAFC" />
 
-    <!-- Right Agent Pillar -->
-    <path d="M 202 94 L 184 106 L 184 202 L 202 214 Z" fill="url(#bAgentGrad)" filter="url(#bNeonGlow)" />
-    <circle cx="193" cy="98" r="3.5" fill="#FFFFFF" />
+    <polygon points="164,138 186,156 164,174 142,156" fill="#0F172A" stroke="url(#bGateBorder)" stroke-width="2" />
+    <polygon points="164,146 174,156 164,166 154,156" fill="url(#titleGrad)" />
+    <circle cx="164" cy="156" r="2.5" fill="#FFFFFF" />
 
-    <!-- Synapses & Center Diamond -->
-    <path d="M 135 154 L 164 154 L 193 154" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="2 2" opacity="0.8" />
-    <path d="M 164 136 L 180 154 L 164 172 L 148 154 Z" fill="#FFFFFF" filter="url(#bIntenseGlow)" />
-    <circle cx="164" cy="154" r="3" fill="#38BDF8" />
+    <!-- Connection Links -->
+    <line x1="124" y1="132" x2="150" y2="112" stroke="#38BDF8" stroke-width="1.2" opacity="0.7" />
+    <line x1="204" y1="132" x2="178" y2="112" stroke="#C084FC" stroke-width="1.2" opacity="0.7" />
+    <line x1="124" y1="176" x2="150" y2="200" stroke="#38BDF8" stroke-width="1.2" opacity="0.7" />
+    <line x1="204" y1="176" x2="178" y2="200" stroke="#C084FC" stroke-width="1.2" opacity="0.7" />
   </g>
 
   <!-- ========================================== -->
-  <!-- RIGHT: TYPOGRAPHY & KEY METRICS -->
+  <!-- RIGHT: FORMAL RESEARCH TYPOGRAPHY -->
   <!-- ========================================== -->
   
   <!-- Main Title -->
-  <text x="320" y="98" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="900" letter-spacing="-1">
-    <tspan fill="#F8FAFC">Dual</tspan><tspan fill="url(#textGrad)">Trust</tspan>
+  <text x="320" y="98" font-family="'Inter', system-ui, -apple-system, sans-serif" font-size="52" font-weight="900" letter-spacing="-1">
+    <tspan fill="#F8FAFC">Dual</tspan><tspan fill="url(#titleGrad)">Trust</tspan>
   </text>
 
-  <!-- Gemini Sub-Badge -->
+  <!-- Formal Architecture Badge -->
   <g transform="translate(620, 62)">
-    <rect width="136" height="24" rx="12" fill="#1E293B" stroke="url(#textGrad)" stroke-width="1" />
-    <text x="68" y="16" font-family="'Inter', -apple-system, sans-serif" font-size="11" font-weight="700" fill="#BAE6FD" text-anchor="middle" letter-spacing="1.5">
-      GEMINI CORE ♊
+    <rect width="180" height="24" rx="6" fill="#1E293B" stroke="url(#titleGrad)" stroke-width="1" />
+    <text x="90" y="16" font-family="'Inter', system-ui, sans-serif" font-size="10.5" font-weight="700" fill="#BAE6FD" text-anchor="middle" letter-spacing="1.2">
+      RUNTIME GATEKEEPER
     </text>
   </g>
 
-  <!-- Tagline -->
-  <text x="322" y="136" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="17" font-weight="500" fill="#94A3B8" letter-spacing="0.2">
-    Asymmetric Bayesian Reputation &amp; Cryptographic Tool Gating for AI Agents
+  <!-- Paper-Accurate Subtitle -->
+  <text x="322" y="136" font-family="'Inter', system-ui, -apple-system, sans-serif" font-size="16.5" font-weight="500" fill="#94A3B8" letter-spacing="0.1">
+    Asymmetric Bayesian Reputation &amp; Cryptographic Gating for Autonomous AI Agents
   </text>
 
-  <!-- Value Proposition Pills -->
+  <!-- 4 Feature Specification Pills -->
   <g transform="translate(322, 172)">
     <!-- Pill 1: Latency -->
     <g transform="translate(0, 0)">
-      <rect width="126" height="30" rx="8" fill="#0F172A" stroke="#0284C7" stroke-width="1" />
-      <text x="63" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#38BDF8" text-anchor="middle">
+      <rect width="132" height="30" rx="6" fill="#0B132B" stroke="#0284C7" stroke-width="1" />
+      <text x="66" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#38BDF8" text-anchor="middle">
         ⚡ 47.10 μs SLA
       </text>
     </g>
 
     <!-- Pill 2: Slashing -->
-    <g transform="translate(138, 0)">
-      <rect width="144" height="30" rx="8" fill="#0F172A" stroke="#6366F1" stroke-width="1" />
-      <text x="72" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#A5B4FC" text-anchor="middle">
-        🛡️ Power-Law v¹·⁸
+    <g transform="translate(144, 0)">
+      <rect width="150" height="30" rx="6" fill="#0B132B" stroke="#6366F1" stroke-width="1" />
+      <text x="75" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#A5B4FC" text-anchor="middle">
+        🛡️ Power-Law γ=1.8
       </text>
     </g>
 
     <!-- Pill 3: Merkle Audit -->
-    <g transform="translate(294, 0)">
-      <rect width="146" height="30" rx="8" fill="#0F172A" stroke="#9333EA" stroke-width="1" />
-      <text x="73" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#C084FC" text-anchor="middle">
+    <g transform="translate(306, 0)">
+      <rect width="144" height="30" rx="6" fill="#0B132B" stroke="#8B5CF6" stroke-width="1" />
+      <text x="72" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#C084FC" text-anchor="middle">
         🔒 RFC 6962 Merkle
       </text>
     </g>
 
     <!-- Pill 4: Zero Deps -->
-    <g transform="translate(452, 0)">
-      <rect width="132" height="30" rx="8" fill="#0F172A" stroke="#10B981" stroke-width="1" />
-      <text x="66" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#34D399" text-anchor="middle">
+    <g transform="translate(462, 0)">
+      <rect width="134" height="30" rx="6" fill="#0B132B" stroke="#10B981" stroke-width="1" />
+      <text x="67" y="19" font-family="'Inter', system-ui, sans-serif" font-size="11.5" font-weight="600" fill="#34D399" text-anchor="middle">
         📦 Pure Python
       </text>
     </g>
   </g>
 
-  <!-- Technical Monospace Sub-footer -->
-  <text x="322" y="238" font-family="'SF Mono', Consolas, Menlo, monospace" font-size="12" fill="#64748B">
-    <tspan fill="#38BDF8">Human</tspan>(Credit Clearance) &amp; <tspan fill="#C084FC">Agent</tspan>(Bayesian Standing) &rarr; <tspan fill="#F8FAFC">Deterministic Authorization</tspan>
+  <!-- Technical Verification Invariant Footer -->
+  <text x="322" y="238" font-family="'SF Mono', Consolas, Menlo, monospace" font-size="11.5" fill="#64748B">
+    <tspan fill="#38BDF8">HumanCredit</tspan>(C_u) &amp; <tspan fill="#C084FC">BayesianStanding</tspan>(T_a) &rarr; <tspan fill="#F8FAFC">Deterministic Authorization Gate</tspan>
   </text>
 </svg>
-
