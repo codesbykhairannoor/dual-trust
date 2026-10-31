@@ -15,6 +15,8 @@ class TestMonteCarloEmpiricalInvariants(unittest.TestCase):
 
     def test_benign_population_zero_false_quarantine(self) -> None:
         """Benign agents with 5% noise must maintain high trust and 0% false quarantine."""
+        import random
+        random.seed(42)
         dt = DualTrust()
         metrics = run_benign_population(dt, num_agents=20, tasks_per_agent=100, noise_rate=0.05)
 
