@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 280" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bannerBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F19" />
+      <stop offset="50%" stop-color="#080C14" />
+      <stop offset="100%" stop-color="#04060A" />
+    </linearGradient>
+
+    <!-- Glow Filters -->
+    <filter id="bNeonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="bIntenseGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="12" result="blur1" />
+      <feMerge>
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Gradients for Pillars & Text -->
+    <linearGradient id="bHumanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <linearGradient id="bAgentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#7E22CE" />
+    </linearGradient>
+
+    <linearGradient id="bDualBridge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#F1F5F9" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="60%" stop-color="#818CF8" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+
+    <linearGradient id="pillBorder" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.5" />
+      <stop offset="100%" stop-color="#9333EA" stop-opacity="0.5" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="960" height="280" rx="20" fill="url(#bannerBg)" stroke="#1E293B" stroke-width="1.2" />
+
+  <!-- Background subtle ambient lights -->
+  <circle cx="150" cy="140" r="90" fill="#0284C7" opacity="0.12" filter="url(#bIntenseGlow)" />
+  <circle cx="210" cy="140" r="90" fill="#7E22CE" opacity="0.12" filter="url(#bIntenseGlow)" />
+  <circle cx="780" cy="70" r="140" fill="#6366F1" opacity="0.05" filter="url(#bIntenseGlow)" />
+
+  <!-- ========================================== -->
+  <!-- LEFT: GEMINI TWINS EMBLEM (CENTER AT X=180, Y=140) -->
+  <!-- ========================================== -->
+  <g transform="translate(40, 20) scale(0.85)">
+    <!-- Shield Outline -->
+    <path d="M164 24 L254 60 C254 160 212 240 164 286 C116 240 74 160 74 60 Z"
+          fill="#050B14" fill-opacity="0.6" stroke="url(#textGrad)" stroke-width="1.8" stroke-dasharray="6 4" opacity="0.75" />
+
+    <!-- Top Arch -->
+    <path d="M 104 104 C 132 84, 196 84, 224 104 L 232 90 C 198 70, 130 70, 96 90 Z"
+          fill="url(#bDualBridge)" filter="url(#bNeonGlow)" />
+
+    <!-- Bottom Arch -->
+    <path d="M 104 204 C 132 224, 196 224, 224 204 L 232 218 C 198 238, 130 238, 96 218 Z"
+          fill="url(#bDualBridge)" filter="url(#bNeonGlow)" />
+
+    <!-- Left Human Pillar -->
+    <path d="M 126 94 L 144 106 L 144 202 L 126 214 Z" fill="url(#bHumanGrad)" filter="url(#bNeonGlow)" />
+    <circle cx="135" cy="98" r="3.5" fill="#FFFFFF" />
+
+    <!-- Right Agent Pillar -->
+    <path d="M 202 94 L 184 106 L 184 202 L 202 214 Z" fill="url(#bAgentGrad)" filter="url(#bNeonGlow)" />
+    <circle cx="193" cy="98" r="3.5" fill="#FFFFFF" />
+
+    <!-- Synapses & Center Diamond -->
+    <path d="M 135 154 L 164 154 L 193 154" stroke="#FFFFFF" stroke-width="1.5" stroke-dasharray="2 2" opacity="0.8" />
+    <path d="M 164 136 L 180 154 L 164 172 L 148 154 Z" fill="#FFFFFF" filter="url(#bIntenseGlow)" />
+    <circle cx="164" cy="154" r="3" fill="#38BDF8" />
+  </g>
+
+  <!-- ========================================== -->
+  <!-- RIGHT: TYPOGRAPHY & KEY METRICS -->
+  <!-- ========================================== -->
+  
+  <!-- Main Title -->
+  <text x="320" y="98" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="52" font-weight="900" letter-spacing="-1">
+    <tspan fill="#F8FAFC">Dual</tspan><tspan fill="url(#textGrad)">Trust</tspan>
+  </text>
+
+  <!-- Gemini Sub-Badge -->
+  <g transform="translate(620, 62)">
+    <rect width="136" height="24" rx="12" fill="#1E293B" stroke="url(#textGrad)" stroke-width="1" />
+    <text x="68" y="16" font-family="'Inter', -apple-system, sans-serif" font-size="11" font-weight="700" fill="#BAE6FD" text-anchor="middle" letter-spacing="1.5">
+      GEMINI CORE ♊
+    </text>
+  </g>
+
+  <!-- Tagline -->
+  <text x="322" y="136" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="17" font-weight="500" fill="#94A3B8" letter-spacing="0.2">
+    Asymmetric Bayesian Reputation &amp; Cryptographic Tool Gating for AI Agents
+  </text>
+
+  <!-- Value Proposition Pills -->
+  <g transform="translate(322, 172)">
+    <!-- Pill 1: Latency -->
+    <g transform="translate(0, 0)">
+      <rect width="126" height="30" rx="8" fill="#0F172A" stroke="#0284C7" stroke-width="1" />
+      <text x="63" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#38BDF8" text-anchor="middle">
+        ⚡ 47.10 μs SLA
+      </text>
+    </g>
+
+    <!-- Pill 2: Slashing -->
+    <g transform="translate(138, 0)">
+      <rect width="144" height="30" rx="8" fill="#0F172A" stroke="#6366F1" stroke-width="1" />
+      <text x="72" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#A5B4FC" text-anchor="middle">
+        🛡️ Power-Law v¹·⁸
+      </text>
+    </g>
+
+    <!-- Pill 3: Merkle Audit -->
+    <g transform="translate(294, 0)">
+      <rect width="146" height="30" rx="8" fill="#0F172A" stroke="#9333EA" stroke-width="1" />
+      <text x="73" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#C084FC" text-anchor="middle">
+        🔒 RFC 6962 Merkle
+      </text>
+    </g>
+
+    <!-- Pill 4: Zero Deps -->
+    <g transform="translate(452, 0)">
+      <rect width="132" height="30" rx="8" fill="#0F172A" stroke="#10B981" stroke-width="1" />
+      <text x="66" y="19" font-family="'Inter', -apple-system, sans-serif" font-size="12" font-weight="600" fill="#34D399" text-anchor="middle">
+        📦 Pure Python
+      </text>
+    </g>
+  </g>
+
+  <!-- Technical Monospace Sub-footer -->
+  <text x="322" y="238" font-family="'SF Mono', Consolas, Menlo, monospace" font-size="12" fill="#64748B">
+    <tspan fill="#38BDF8">Human</tspan>(Credit Clearance) &amp; <tspan fill="#C084FC">Agent</tspan>(Bayesian Standing) &rarr; <tspan fill="#F8FAFC">Deterministic Authorization</tspan>
+  </text>
+</svg>

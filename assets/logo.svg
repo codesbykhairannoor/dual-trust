@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="bgGrad" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#111827" />
+      <stop offset="60%" stop-color="#080C14" />
+      <stop offset="100%" stop-color="#030508" />
+    </radialGradient>
+
+    <!-- Outer Glow Filter -->
+    <filter id="neonGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="intenseGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="16" result="blur1" />
+      <feGaussianBlur stdDeviation="28" result="blur2" />
+      <feMerge>
+        <feMergeNode in="blur2" />
+        <feMergeNode in="blur1" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Left Pillar Gradient: Human Cyan/Azure -->
+    <linearGradient id="humanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#0284C7" />
+      <stop offset="100%" stop-color="#0369A1" />
+    </linearGradient>
+
+    <linearGradient id="humanHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#BAE6FD" />
+      <stop offset="30%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#0284C7" />
+    </linearGradient>
+
+    <!-- Right Pillar Gradient: Agent Violet/Magenta -->
+    <linearGradient id="agentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#C084FC" />
+      <stop offset="50%" stop-color="#9333EA" />
+      <stop offset="100%" stop-color="#6B21A8" />
+    </linearGradient>
+
+    <linearGradient id="agentHighlight" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#F5D0FE" />
+      <stop offset="30%" stop-color="#C084FC" />
+      <stop offset="100%" stop-color="#9333EA" />
+    </linearGradient>
+
+    <!-- Dual Bridge Horizontal Gradient -->
+    <linearGradient id="dualBridge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#E2E8F0" />
+      <stop offset="100%" stop-color="#C084FC" />
+    </linearGradient>
+
+    <!-- Shield Border Gradient -->
+    <linearGradient id="shieldBorder" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284C7" stop-opacity="0.8" />
+      <stop offset="50%" stop-color="#6366F1" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#A855F7" stop-opacity="0.8" />
+    </linearGradient>
+
+    <!-- Core Diamond Gradient -->
+    <linearGradient id="coreDiamond" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="50%" stop-color="#E0F2FE" />
+      <stop offset="100%" stop-color="#F3E8FF" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background Card -->
+  <rect width="512" height="512" rx="108" fill="url(#bgGrad)" />
+
+  <!-- Outer Cryptographic Shield Contour -->
+  <path d="M256 46 L406 102 C406 250 342 376 256 446 C170 376 106 250 106 102 Z"
+        fill="none" stroke="url(#shieldBorder)" stroke-width="2.5" stroke-dasharray="8 6" opacity="0.65" />
+
+  <path d="M256 62 L392 114 C392 244 334 358 256 424 C178 358 120 244 120 114 Z"
+        fill="#050B14" fill-opacity="0.5" stroke="url(#shieldBorder)" stroke-width="1.5" />
+
+  <!-- Background Ambient Glow -->
+  <circle cx="196" cy="256" r="88" fill="#0284C7" opacity="0.16" filter="url(#intenseGlow)" />
+  <circle cx="316" cy="256" r="88" fill="#9333EA" opacity="0.16" filter="url(#intenseGlow)" />
+  <circle cx="256" cy="256" r="48" fill="#FFFFFF" opacity="0.12" filter="url(#neonGlow)" />
+
+  <!-- ========================================== -->
+  <!-- GEMINI TWINS DUALITY SYMBOL (♊) -->
+  <!-- ========================================== -->
+
+  <!-- Top Gemini Arch (Binding Human & Agent) -->
+  <g filter="url(#neonGlow)">
+    <path d="M 152 164 C 200 132, 312 132, 360 164 L 372 144 C 316 112, 196 112, 140 144 Z"
+          fill="url(#dualBridge)" />
+  </g>
+
+  <!-- Bottom Gemini Arch (Grounding Matrix) -->
+  <g filter="url(#neonGlow)">
+    <path d="M 152 348 C 200 380, 312 380, 360 348 L 372 368 C 316 400, 196 400, 140 368 Z"
+          fill="url(#dualBridge)" />
+  </g>
+
+  <!-- LEFT PILLAR: The Human Principal (Accountable Credit) -->
+  <g id="humanPillar">
+    <!-- Shadow & Base -->
+    <path d="M 174 154 L 204 172 L 204 340 L 174 358 Z" fill="#0369A1" opacity="0.9" />
+    <!-- Front Face -->
+    <path d="M 188 146 L 218 164 L 218 348 L 188 366 Z" fill="url(#humanGrad)" filter="url(#neonGlow)" />
+    <!-- Highlight Facet -->
+    <path d="M 188 146 L 202 155 L 202 357 L 188 366 Z" fill="url(#humanHighlight)" />
+    <!-- Celestial Node: Castor (α Geminorum) -->
+    <circle cx="203" cy="154" r="5" fill="#FFFFFF" filter="url(#neonGlow)" />
+    <circle cx="203" cy="154" r="2.5" fill="#38BDF8" />
+  </g>
+
+  <!-- RIGHT PILLAR: The Autonomous Agent (Bayesian Standing) -->
+  <g id="agentPillar">
+    <!-- Shadow & Base -->
+    <path d="M 338 154 L 308 172 L 308 340 L 338 358 Z" fill="#6B21A8" opacity="0.9" />
+    <!-- Front Face -->
+    <path d="M 324 146 L 294 164 L 294 348 L 324 366 Z" fill="url(#agentGrad)" filter="url(#neonGlow)" />
+    <!-- Highlight Facet -->
+    <path d="M 324 146 L 310 155 L 310 357 L 324 366 Z" fill="url(#agentHighlight)" />
+    <!-- Celestial Node: Pollux (β Geminorum) -->
+    <circle cx="309" cy="154" r="5" fill="#FFFFFF" filter="url(#neonGlow)" />
+    <circle cx="309" cy="154" r="2.5" fill="#C084FC" />
+  </g>
+
+  <!-- Cryptographic Synapse Lines (Interlocking Neural / Merkle Ties) -->
+  <path d="M 203 216 L 256 256 L 309 216" fill="none" stroke="url(#humanGrad)" stroke-width="2.5" opacity="0.8" />
+  <path d="M 203 296 L 256 256 L 309 296" fill="none" stroke="url(#agentGrad)" stroke-width="2.5" opacity="0.8" />
+  
+  <path d="M 203 256 L 309 256" fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-dasharray="3 3" opacity="0.6" />
+
+  <!-- ========================================== -->
+  <!-- CENTRAL NEXUS: THE DUAL-TRUST MATRIX CORE -->
+  <!-- ========================================== -->
+  <g id="centralNexus" filter="url(#intenseGlow)">
+    <!-- Central Rhombus (Diamond Nexus) -->
+    <path d="M 256 226 L 286 256 L 256 286 L 226 256 Z" fill="url(#coreDiamond)" />
+    <!-- Inner Cryptographic Key / Shield Vertex -->
+    <path d="M 256 238 L 274 256 L 256 274 L 238 256 Z" fill="#0B0F19" />
+    <circle cx="256" cy="256" r="4.5" fill="#38BDF8" />
+  </g>
+
+  <!-- Constellation Accent Lines -->
+  <g stroke="#94A3B8" stroke-width="1" opacity="0.35">
+    <line x1="203" y1="154" x2="160" y2="108" />
+    <circle cx="160" cy="108" r="2" fill="#BAE6FD" />
+    <line x1="309" y1="154" x2="352" y2="108" />
+    <circle cx="352" cy="108" r="2" fill="#F5D0FE" />
+  </g>
+
+  <!-- Subtitle Text Inside Seal -->
+  <text x="256" y="472" font-family="'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+        font-size="14" font-weight="700" letter-spacing="4" fill="#94A3B8" text-anchor="middle" opacity="0.85">
+    DUALTRUST &bull; GEMINI
+  </text>
+</svg>

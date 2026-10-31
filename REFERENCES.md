@@ -1,8 +1,7 @@
 # 📚 DualTrust: Curated Academic Bibliography & Verified Repositories
 
 > **Zero-Hallucination Academic Standard:**  
-> All 20 entries below are 100% verified against CrossRef, OpenAlex, arXiv, and GitHub APIs. Each paper includes active DOIs, official peer-reviewed or conference citations, and verified production code repositories.  
-> **Peer-Reviewed & Validated by:** DeepSeek Chat & Google Gemini 2.5 Flash (Editor-in-Chief Review Standard).
+> All 20 entries below are 100% verified against CrossRef, OpenAlex, arXiv, and GitHub APIs. Each paper includes active DOIs, official peer-reviewed or conference citations, and verified production code repositories.
 
 ---
 

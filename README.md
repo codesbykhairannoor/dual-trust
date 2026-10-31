@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/banner.svg" alt="DualTrust - Gemini Duality Governance Engine" width="100%">
+</p>
+
 # DualTrust
 
 [![PyPI Version](https://img.shields.io/badge/pypi-v0.4.1-blue.svg)](https://pypi.org/project/dualtrust/)
@@ -466,6 +470,6 @@ SOFTWARE.
 ---
 
 <p align="center">
-  <sub><em>Architected and continuously refined through symbiotic neural co-synthesis and synthetic reasoning augmentations.</em></sub>
+  <sub>DualTrust &bull; Open-Source Autonomous Agent Containment & Governance Runtime</sub>
 </p>
 

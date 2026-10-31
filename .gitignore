@@ -72,3 +72,23 @@ venv.bak/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Internal audit transcripts & scratch files
+*_AUDIT.md
+*_VERDICT.md
+*_TRANSCRIPT.md
+*_REVIEW.md
+ADVERSARIAL_DEBATE_TRANSCRIPT.md
+BLIND_INDEPENDENT_AUDIT.md
+FRONTIER_AI_REVIEW.md
+RAW_AI_VERDICT.md
+TWO_FRONTIER_MODELS_AUDIT.md
+scripts/multi_model_debate.py
+scripts/run_blind_audit.py
+scripts/run_two_frontier_audit.py
+scripts/test_raw_feedback.py
+rawlog.md
+clean_abstract.txt
+main.pdf
+*.log
+bin/
