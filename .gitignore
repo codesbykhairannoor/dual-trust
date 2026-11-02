@@ -92,3 +92,21 @@ clean_abstract.txt
 main.pdf
 *.log
 bin/
+
+# Paper, LaTeX & Manuscript Drafts
+paper/
+*.tex
+*.bib
+*.cls
+*.bst
+*.bbx
+*.cbx
+*.dbx
+*.aux
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.pdf
+*.zip
+*.tar
+*.gz
